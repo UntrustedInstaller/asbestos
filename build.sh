@@ -1,6 +1,6 @@
 #!/bin/bash
 # =====================================================================
-#  asbestOS 32-bit build - Milestone 1
+#  asbestOS
 # =====================================================================
 # Produces build/os.img, a raw ATA disk image containing:
 #   LBA 0       Stage 1 boot sector
@@ -27,7 +27,7 @@ KERNEL_MAX=$((KERNEL_BYTES - 4))
 mkdir -p "$OUT"
 
 echo "=============================================="
-echo "            ASBESTOS 32-BIT BUILDER           "
+echo "               ASBESTOS BUILDER               "  
 echo "=============================================="
 
 echo "[*] Assembling Stage 1 (src/boot.asm)..."
