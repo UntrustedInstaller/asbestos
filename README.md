@@ -2,6 +2,12 @@
 
 An intentionally abrasive operating system inspired by INTERCAL.
 
+## Why? ##
+
+I was talking to a friend in class about the humor of INTERCAL's "PLEASE" instructions, to which he remarked:  
+*"Why not do that with an OS?"*  
+And it clicked. I got home and got to work.
+
 ## Current state: milestone 1 complete, milestone 2 underway
 
 Milestone 1 is complete: the kernel boots, enters ring 0 with flat segments and
@@ -55,7 +61,6 @@ build finishes. Pass `--no-run` to skip the prompt.
 
 Dependencies: `nasm`, `gcc` with 32-bit support (`gcc-multilib` on
 Debian/Ubuntu), `ld`, `objcopy`, `python3`, and optionally `qemu-system-i386`
-and `socat` for the headless screenshot check.
 
 ## What is in the box
 
@@ -73,7 +78,8 @@ and `socat` for the headless screenshot check.
 - **`brash`** — a fixed-prompt shell with built-ins and a `please` / `sorry`
   manners gate
 - **JetBrains Mono bitmap font** — 8×16 glyphs for ASCII `0x20`–`0x7F`,
-  rasterised from JetBrains Mono at 13 px and licensed under the SIL OFL 1.1
+  rasterised from JetBrains Mono at 13 px and licensed under the SIL OFL 1.1  
+  *I like JetBrains Mono.*
 
 ## Project structure
 
