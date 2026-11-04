@@ -8,27 +8,6 @@ I was talking to a friend in class about the humor of INTERCAL's "PLEASE" instru
 *"Why not do that with an OS?"*  
 And it clicked. I got home and got to work.
 
-## Current state: milestone 1 complete, milestone 2 underway
-
-Milestone 1 is complete: the kernel boots, enters ring 0 with flat segments and
-no paging, selects a 32-bpp VBE mode, and draws an 80×25 text console in exact
-24-bit colour:
-
-- **Background:** `#4B2222`
-- **Foreground:** `#C39393`
-
-Milestone 2 currently has:
-
-- **IDT and panic screen** — any CPU exception stops the machine with a readable
-  oops-style report instead of a triple-fault reboot
-- **Polled PS/2 keyboard** — scancode set 1, shift, caps lock, backspace, enter,
-  and tab
-- **`brash`** — the Asbestos SHell — first iteration, with built-in commands and
-  the manners gate
-
-Hardware interrupts are still masked, and there is no storage driver or
-filesystem yet. `brash` cannot run programs or touch a disk.
-
 ## brash
 
 `brash` is the Asbestos SHell. Its prompt is always `usr@brash>`.
