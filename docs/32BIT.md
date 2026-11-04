@@ -53,7 +53,7 @@ src/
 ├── console.c       VBE framebuffer 80×25 text console
 ├── console.h
 ├── boot_info.h     BootInfo struct shared with stage2.asm
-├── font8x16.h      Public-domain IBM VGA 8×16 glyphs, ASCII 0x20–0x7F
+├── font8x16.h      JetBrains Mono 8×16 glyphs, ASCII 0x20–0x7F (generated)
 ├── serial.c        COM1 output for headless testing
 ├── serial.h
 ├── string.c        memset/memcpy/memmove/strlen/strcmp
@@ -235,9 +235,32 @@ attribute per cell yet; foreground and background are global console state.
 ### Font
 
 `src/font8x16.h` contains 96 glyphs (ASCII `0x20`–`0x7F`), 16 bytes per glyph,
-one byte per scanline with the most-significant bit on the left. It is the
-public-domain IBM VGA 8×16 bitmap font extracted from the standard Linux
-`default8x16.psfu` console font.
+one byte per scanline with the most-significant bit on the left.
+
+The glyphs are rasterised from **JetBrains Mono Regular** at 13 px with the
+baseline on row 12. Thirteen pixels is the largest size at which the typeface
+fits the 8×16 cell: at 14 px the advance is 8.41 px and `W`, `%`, and `&` grow
+to nine pixels wide, while at 12 px the glyphs get noticeably smaller than the
+cell. Rendering at the cell size directly (rather than at a large size and
+downscaling) keeps every stem on a whole pixel and every glyph inside its cell.
+
+The table is generated, not hand-edited:
+
+```bash
+python3 tools/make-font.py \
+    --font /path/to/JetBrainsMono-Regular.ttf \
+    --out  src/font8x16.h
+```
+
+The script needs Pillow. The generated header is checked in, so a normal build
+does not need Pillow or the TrueType file. JetBrains Mono is licensed under the
+SIL Open Font License 1.1 and the bitmap is a derivative of it; the licence text
+is in `LICENSES/JetBrainsMono-OFL.txt`. Do not replace the header with a font
+that has no compatible licence.
+
+To swap in another monospace face, point `--font` at it. Keep the cell size,
+baseline, and rasterisation in `tools/make-font.py` and re-run the boot checks:
+the glyph shapes change but the `font8x16[96][16]` interface does not.
 
 Characters outside `0x20`–`0x7E` render as `?`. Control characters are handled
 by the console itself:
@@ -310,8 +333,8 @@ build/os.img         4 MiB raw disk image
 Expected serial output from a successful boot:
 
 ```
-asbestOS 32-bit kernel entered
-Milestone 1 complete; halting in kernel_main
+asbestOS kernel entered
+Halting in kernel_main
 ```
 
 A correct screenshot contains only two colours: `#4B2222` and `#C39393`.

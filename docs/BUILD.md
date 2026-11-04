@@ -63,6 +63,24 @@ The kernel region starts with a four-byte size header. The kernel binary itself
 must be at most 131,068 bytes. If stage 2 or the kernel outgrows its region, the
 build fails with the actual size and the constant to increase.
 
+### Regenerating the font
+
+`src/font8x16.h` is generated from JetBrains Mono and checked in, so the normal
+build has no font dependencies. To change it:
+
+```bash
+curl -LO https://raw.githubusercontent.com/JetBrains/JetBrainsMono/master/fonts/ttf/JetBrainsMono-Regular.ttf
+python3 tools/make-font.py --font JetBrainsMono-Regular.ttf --out src/font8x16.h
+```
+
+This needs Pillow (`pip install pillow`). The script rasterises ASCII
+`0x20`–`0x7F` at 13 px with the baseline on row 12, the largest size where every
+JetBrains Mono glyph fits an 8×16 cell. Rebuild and re-run the screenshot check
+afterwards: the glyphs change, the two-colour histogram must not.
+
+The bitmap is a derivative of JetBrains Mono and stays under the SIL OFL 1.1.
+Keep `LICENSES/JetBrainsMono-OFL.txt` with the tree if you redistribute it.
+
 ## Run
 
 ```bash
@@ -89,8 +107,8 @@ numbers differ.
 Expected serial output:
 
 ```
-asbestOS 32-bit kernel entered
-Milestone 1 complete; halting in kernel_main
+asbestOS kernel entered
+Halting in kernel_main
 ```
 
 ## Headless verification

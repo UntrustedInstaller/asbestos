@@ -44,7 +44,8 @@ and `socat` for the headless screenshot check.
 - **Exact colours** — `#4B2222` background, `#C39393` foreground, no palette
   approximation
 - **Serial diagnostics** — COM1 output for headless boot verification
-- **Public-domain IBM VGA font** — 8×16 glyphs for ASCII `0x20`–`0x7F`
+- **JetBrains Mono bitmap font** — 8×16 glyphs for ASCII `0x20`–`0x7F`,
+  rasterised from JetBrains Mono at 13 px and licensed under the SIL OFL 1.1
 
 ## Project structure
 
@@ -58,7 +59,7 @@ and `socat` for the headless screenshot check.
 │   ├── console.c       — VBE framebuffer 80×25 console
 │   ├── console.h
 │   ├── boot_info.h     — BootInfo passed from stage 2 to the kernel
-│   ├── font8x16.h      — Public-domain IBM VGA font
+│   ├── font8x16.h      — JetBrains Mono 8×16 bitmap (generated)
 │   ├── serial.c        — COM1 output for testing
 │   ├── serial.h
 │   ├── string.c        — Freestanding memory/string helpers
@@ -66,9 +67,13 @@ and `socat` for the headless screenshot check.
 │   ├── io.h            — Port I/O and CPU helpers
 │   ├── types32.h       — Fixed-width types
 │   └── linker32.ld     — Links the kernel at 1 MiB
+├── tools/
+│   └── make-font.py    — Regenerates font8x16.h from a TrueType font
 ├── docs/
 │   ├── 32BIT.md        — Architecture, boot path, console internals
 │   └── BUILD.md        — Build, run, and headless test instructions
+├── LICENSES/
+│   └── JetBrainsMono-OFL.txt — SIL OFL 1.1 text for the bitmap font
 ├── LICENSE
 └── asbestos.svg
 ```
@@ -93,6 +98,10 @@ and `socat` for the headless screenshot check.
 ## License
 
 GNU General Public License v3.0. See [LICENSE](LICENSE).
+
+The bitmap font in `src/font8x16.h` is derived from JetBrains Mono and is
+distributed under the SIL Open Font License, Version 1.1. See
+[LICENSES/JetBrainsMono-OFL.txt](LICENSES/JetBrainsMono-OFL.txt).
 
 ---
 

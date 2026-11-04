@@ -7,7 +7,7 @@
  * Framebuffer text console.
  *
  * The logical console is always 80x25 cells. Each cell is 8x16 pixels,
- * matching the IBM VGA bitmap font. This preserves the existing shell
+ * matching the bitmap font in font8x16.h. This preserves the existing shell
  * geometry while rendering through the VBE linear framebuffer.
  *
  * The 80x25 area is centred in the selected VBE mode. The rest of the
