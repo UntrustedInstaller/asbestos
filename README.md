@@ -1,12 +1,6 @@
 <img src="asbestos.svg" alt="asbestOS" width="50%">
 
-# asbestOS
-
-*difficult. by design.*
-
-An intentionally abrasive operating system, built from the BIOS up with **NASM
-assembly** and **C**. asbestOS boots into flat 32-bit protected mode and draws
-its own text console on a VBE linear framebuffer.
+An intentionally abrasive operating system inspired by INTERCAL.
 
 ## Current state: milestone 1
 
