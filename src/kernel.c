@@ -15,7 +15,7 @@ static void fail(const char *message) {
 
 void kernel_main(void) {
     serial_init();
-    serial_puts("asbestOS 32-bit kernel entered\n");
+    serial_puts("asbestOS kernel entered\n");
 
     const struct BootInfo *bi =
         (const struct BootInfo *)(uint32_t)BOOT_INFO_ADDR;
@@ -38,9 +38,6 @@ void kernel_main(void) {
 
     console_puts("asbestOS\n");
     console_puts("difficult. by design.\n\n");
-
-    console_puts("Milestone 1: 32-bit protected mode + VBE console\n");
-    console_puts("------------------------------------------------\n");
 
     console_puts("Framebuffer: ");
     console_put_hex32(bi->fb_addr);
@@ -74,18 +71,16 @@ void kernel_main(void) {
     console_put_dec(bi->blue_size);
     console_puts("@");
     console_put_dec(bi->blue_pos);
-    console_puts("\n");
-
-    console_puts("Colours:     bg #4B2222, fg #C39393\n\n");
+    console_puts("\n\n");
 
     console_puts("ABCDEFGHIJKLMNOPQRSTUVWXYZ\n");
     console_puts("abcdefghijklmnopqrstuvwxyz\n");
     console_puts("0123456789 !\"#$%&'()*+,-./:;<=>?@[\\]^_`{|}~\n\n");
 
-    console_puts("If you can read this, the 32-bit kernel is running.\n");
-    console_puts("Milestone 1 complete. Halting.\n");
+    console_puts("If you can read this, the kernel is running.\n");
+    console_puts("Halting.\n");
 
-    serial_puts("Milestone 1 complete; halting in kernel_main\n");
+    serial_puts("Halting in kernel_main\n");
 
     for (;;) {
         cpu_halt();
