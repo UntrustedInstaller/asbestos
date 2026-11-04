@@ -21,7 +21,7 @@
 
 #define SHELL_MANNERS_ERROR_PLEASE "That is not the magic word. Say \"please\"."
 #define SHELL_MANNERS_ERROR_SORRY "An apology would be nice. Say \"sorry\"."
-#define SHELL_ERROR_COMPOUND "Compound statements are not permitted. I can't multitask well"
+#define SHELL_ERROR_COMPOUND "I can't multitask well. Please avoid compound statements"
 #define SHELL_ERROR_EMPTY "No command was given. Do you normally stare blankly at people?"
 #define SHELL_ERROR_TOO_MANY "Too many arguments. I can't keep track of all of that."
 #define SHELL_ERROR_UNKNOWN "Unknown command: "
