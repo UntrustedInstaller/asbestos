@@ -1,0 +1,11 @@
+build/
+*.img
+*.o
+*.bin
+agents/
+session-*.md
+AGENTS.md
+.env
+
+# Non-source assets
+design-docs.md

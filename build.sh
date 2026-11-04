@@ -1,0 +1,106 @@
+#!/bin/bash
+# =====================================================================
+#  asbestOS 32-bit build - Milestone 1
+# =====================================================================
+# Produces build/os.img, a raw ATA disk image containing:
+#   LBA 0       Stage 1 boot sector
+#   LBA 1..8    Stage 2 loader (8 sectors, padded)
+#   LBA 9..264  kernel image (128 KiB max, 4-byte size header + binary)
+#
+# Run with QEMU:
+#   qemu-system-i386 -drive file=build/os.img,format=raw,if=ide \
+#                    -vga std -serial stdio
+#
+# Or:
+#   ./build.sh --run
+# =====================================================================
+set -e
+
+OUT=build
+STAGE2_SECTORS=8
+KERNEL_BYTES=$((128 * 1024))
+KERNEL_MAX=$((KERNEL_BYTES - 4))
+
+mkdir -p "$OUT"
+
+echo "=============================================="
+echo "            ASBESTOS 32-BIT BUILDER           "
+echo "=============================================="
+
+echo "[*] Assembling Stage 1 (src/boot.asm)..."
+nasm -f bin src/boot.asm -o "$OUT/boot.bin"
+
+echo "[*] Assembling Stage 2 (src/stage2.asm)..."
+nasm -f bin src/stage2.asm -o "$OUT/stage2.raw.bin"
+
+STAGE2_SIZE=$(stat -c%s "$OUT/stage2.raw.bin")
+STAGE2_MAX=$((STAGE2_SECTORS * 512))
+if (( STAGE2_SIZE > STAGE2_MAX )); then
+    echo "    !! Stage 2 is ${STAGE2_SIZE} bytes; the loader reserves ${STAGE2_MAX}." >&2
+    echo "    !! Increase STAGE2_SECTORS in src/boot.asm and build.sh." >&2
+    exit 1
+fi
+cp "$OUT/stage2.raw.bin" "$OUT/stage2.bin"
+truncate -s "$STAGE2_MAX" "$OUT/stage2.bin"
+
+echo "[*] Assembling kernel entry (src/entry32.asm)..."
+nasm -f elf32 src/entry32.asm -o "$OUT/entry32.o"
+
+CFLAGS="-m32 -march=i386 -mtune=i386 -ffreestanding -fno-builtin \
+        -fno-pic -fno-pie -fno-stack-protector \
+        -fno-asynchronous-unwind-tables -fno-unwind-tables \
+        -nostdlib -O2 -Wall -Wextra -Isrc"
+
+for src in kernel console string serial; do
+    echo "[*] Compiling src/${src}.c..."
+    # shellcheck disable=SC2086
+    gcc $CFLAGS -c "src/${src}.c" -o "$OUT/${src}.o"
+done
+
+echo "[*] Linking kernel..."
+ld -m elf_i386 -T src/linker32.ld \
+    "$OUT/entry32.o" \
+    "$OUT/kernel.o" \
+    "$OUT/console.o" \
+    "$OUT/string.o" \
+    "$OUT/serial.o" \
+    -o "$OUT/kernel.elf"
+
+objcopy -O binary -j .text -j .rodata -j .data "$OUT/kernel.elf" "$OUT/kernel.bin"
+
+KERNEL_SIZE=$(stat -c%s "$OUT/kernel.bin")
+if (( KERNEL_SIZE > KERNEL_MAX )); then
+    echo "    !! Kernel is ${KERNEL_SIZE} bytes; Stage 2 loads at most ${KERNEL_MAX}." >&2
+    echo "    !! Increase KERNEL_SECTORS in src/stage2.asm and rebuild." >&2
+    exit 1
+fi
+
+# The loader reads a u32 byte count followed by the flat kernel binary.
+python3 - "$OUT/kernel.bin" "$OUT/kernel.hdr" <<'PY'
+import struct
+import sys
+
+data = open(sys.argv[1], "rb").read()
+with open(sys.argv[2], "wb") as out:
+    out.write(struct.pack("<I", len(data)))
+    out.write(data)
+PY
+truncate -s "$KERNEL_BYTES" "$OUT/kernel.hdr"
+
+echo "[*] Assembling raw disk image..."
+cat "$OUT/boot.bin" "$OUT/stage2.bin" "$OUT/kernel.hdr" > "$OUT/os.img"
+truncate -s 4M "$OUT/os.img"
+
+echo "[+] Build complete: $OUT/os.img"
+echo "    Stage 1: 512 bytes"
+echo "    Stage 2: ${STAGE2_SIZE} bytes (padded to ${STAGE2_MAX})"
+echo "    Kernel:  ${KERNEL_SIZE} bytes (limit ${KERNEL_MAX})"
+echo "    Disk:    $(stat -c%s "$OUT/os.img") bytes"
+
+if [ "${1:-}" = "--run" ]; then
+    echo "[*] Launching QEMU..."
+    exec qemu-system-i386 \
+        -drive file="$OUT/os.img",format=raw,if=ide \
+        -vga std \
+        -serial stdio
+fi
