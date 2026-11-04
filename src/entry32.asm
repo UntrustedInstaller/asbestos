@@ -1,5 +1,5 @@
 ; =====================================================================
-;  asbestOS 32-bit - kernel entry
+;  asbestOS - kernel entry
 ; =====================================================================
 ; Entered at 0x00100000 after Stage 2 has copied the kernel image from
 ; low memory. This file sets up a flat 32-bit environment, clears BSS,

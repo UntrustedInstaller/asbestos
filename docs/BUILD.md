@@ -11,12 +11,18 @@ polled PS/2 keyboard, and the first iteration of `brash`. See
 - GNU `ld` and `objcopy`
 - Python 3 (writes the kernel size header)
 - QEMU (optional, for testing)
-- `socat` and ImageMagick (optional, for the headless screenshot check)
+
 
 On Debian/Ubuntu:
 
 ```bash
-sudo apt install nasm gcc-multilib qemu-system-x86 socat imagemagick
+sudo apt install nasm gcc-multilib qemu-system-x86 
+```
+
+Or Arch:
+
+```bash
+sudo pacman -Syu nasm gcc-multilib qemu-system-x86 
 ```
 
 ## Build

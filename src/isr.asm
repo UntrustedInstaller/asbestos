@@ -1,5 +1,5 @@
 ; =====================================================================
-;  asbestOS 32-bit - interrupt and exception stubs
+;  asbestOS - interrupt and exception stubs
 ; =====================================================================
 ; The CPU pushes an error code for some exceptions but not others. Each
 ; stub normalises the stack by pushing a vector number and, when the CPU

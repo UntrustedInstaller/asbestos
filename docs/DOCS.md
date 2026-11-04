@@ -20,21 +20,6 @@ enters protected mode, every instruction executed is 32-bit.
 
 ## 1. Target architecture
 
-| Property        | Current choice                                      |
-|-----------------|-----------------------------------------------------|
-| CPU mode        | 32-bit protected mode                               |
-| Privilege level | Ring 0                                              |
-| Segmentation    | Flat: code `0x08`, data `0x10`, base 0, limit 4 GiB |
-| Paging          | Off                                                 |
-| Interrupts      | IDT installed; exceptions caught, hardware IRQs masked |
-| Input           | Polled PS/2 keyboard, scancode set 1                |
-| Shell           | `brash`, fixed prompt, built-in commands only       |
-| Kernel location | Linked and run at `0x00100000` (1 MiB)              |
-| Kernel stack    | Top at `0x00090000`, grows down                     |
-| Firmware        | BIOS (no UEFI)                                      |
-| Display         | VBE linear framebuffer, 32 bpp                      |
-| Storage target  | ATA PIO (not used yet), FAT16/FAT32 later           |
-
 No paging means addresses in the kernel are physical addresses. That is fine
 while the kernel is the only thing running and the firmware has set up the
 framebuffer. Paging can be introduced later with an identity map for low memory
@@ -46,43 +31,7 @@ and the framebuffer.
 i386-class machine; avoiding later instruction sets keeps the kernel honest and
 avoids accidentally depending on SSE or CMOV before they are enabled.
 
----
-
-## 2. Source layout
-
-```
-src/
-├── boot.asm        Stage 1 boot sector (16-bit, BIOS LBA read)
-├── stage2.asm      Stage 2 loader (16-bit: disk, VBE, A20, GDT, PM entry)
-├── entry32.asm     32-bit kernel entry: segments, stack, BSS, call C
-├── kernel.c        Kernel entry: validate BootInfo, start console and brash
-├── console.c       VBE framebuffer 80×25 text console
-├── console.h
-├── boot_info.h     BootInfo struct shared with stage2.asm
-├── font8x16.h      JetBrains Mono 8×16 glyphs, ASCII 0x20–0x7F (generated)
-├── serial.c        COM1 output for headless testing
-├── serial.h
-├── string.c        memset/memcpy/memmove/strlen/strcmp
-├── string.h
-├── io.h            Port I/O, CPU helpers, control-register reads
-├── types32.h       Fixed-width types (freestanding, no libc)
-├── idt.c           IDT setup, exception names, C dispatcher
-├── idt.h           IDT API and struct trap_frame
-├── isr.asm         256 generated exception stubs, isr_common
-├── panic.c         Panic screen and serial fault report
-├── panic.h
-├── keyboard.c      Polled PS/2 keyboard, scancode set 1
-├── keyboard.h
-├── shell.c         brash: line editor, parser, manners gate, built-ins
-├── shell.h
-└── linker32.ld     Links the kernel at 0x00100000
-```
-
-The build script is `build.sh` at the repository root.
-
----
-
-## 3. Disk layout
+## 2. Disk layout
 
 `build/os.img` is a raw 4 MiB ATA disk image. It is not a filesystem image yet;
 it is a flat sequence of regions:
@@ -112,7 +61,7 @@ real image ends.
 
 ---
 
-## 4. Memory layout during boot
+## 3. Memory layout during boot
 
 | Address           | Use                                                    |
 |-------------------|--------------------------------------------------------|
@@ -134,7 +83,7 @@ safe: the source and destination ranges do not overlap.
 
 ---
 
-## 5. Boot sequence
+## 4. Boot sequence
 
 1. **BIOS** loads LBA 0 to `0x7C00` and jumps to it.
 2. **Stage 1 (`boot.asm`)**
@@ -170,7 +119,7 @@ safe: the source and destination ranges do not overlap.
 
 ---
 
-## 6. VBE mode selection
+## 5. VBE mode selection
 
 Stage 2 does not assume a particular mode number. It asks the firmware for the
 controller's mode list and evaluates every entry.
@@ -232,7 +181,7 @@ the pitch is at least `width * 4` before touching the framebuffer.
 
 ---
 
-## 7. Framebuffer console
+## 6. Framebuffer console
 
 ### Geometry
 
@@ -288,28 +237,6 @@ by the console itself:
 
 Other bytes are stored and drawn as-is.
 
-### Colours
-
-Milestone 1 uses exactly two colours:
-
-| Role       | Hex       | RGB             |
-|------------|-----------|-----------------|
-| Background | `#4B2222` | `(75, 34, 34)`  |
-| Foreground | `#C39393` | `(195, 147, 147)` |
-
-The values live in `src/console.h` as `CONSOLE_DEFAULT_BG` and
-`CONSOLE_DEFAULT_FG`.
-
-`rgb_to_pixel()` converts an 8-bit-per-channel colour into the framebuffer's
-mask layout using the `red_size`/`red_pos`, `green_size`/`green_pos`, and
-`blue_size`/`blue_pos` fields from `BootInfo`. For the common 32-bpp `8:8:8`
-layout this reduces to the usual `0x00RRGGBB` word, but the general path means
-the console also works on 16-bpp or unusual mask layouts if stage 2 is later
-relaxed.
-
-`put_pixel()` understands 32-, 24-, and 16-bpp framebuffers. Milestone 1 only
-selects 32-bpp modes, so the other paths are defensive rather than tested.
-
 ### Cursor and scrolling
 
 The cursor is drawn as a solid underline across the bottom two rows of the
@@ -323,7 +250,7 @@ milestone can replace it with a framebuffer blit.
 
 ---
 
-## 8. Interrupts, exceptions, and the panic screen
+## 7. Interrupts, exceptions, and the panic screen
 
 The IDT is installed early in `kernel_main()`, before the console exists. That
 ordering matters: a fault during BootInfo validation should produce a panic
@@ -427,7 +354,7 @@ line up.
 
 ---
 
-## 9. Keyboard and brash
+## 8. Keyboard and brash
 
 ### Polled PS/2 keyboard
 
@@ -533,7 +460,7 @@ testing possible without decoding the framebuffer.
 
 ---
 
-## 10. Build and run
+## 9. Build and run
 
 See [BUILD.md](BUILD.md) for the full instructions. In short:
 
@@ -567,7 +494,7 @@ entered line is mirrored as `brash: <line>`; `halt` also prints
 
 ---
 
-## 11. Current limitations
+## 10. Current limitations
 
 The tree is still deliberately incomplete:
 
@@ -593,7 +520,7 @@ and a firmware that leaves A20 controllable through port `0x92`.
 
 ---
 
-## 12. Milestone 2 and beyond
+## 11. Milestone 2 and beyond
 
 Milestone 2 is in progress. The IDT and panic screen, the polled PS/2 keyboard,
 and the first iteration of `brash` are done.
@@ -626,7 +553,7 @@ regressions are obvious.
 
 ---
 
-## 13. Design notes and gotchas
+## 12. Design notes and gotchas
 
 A few decisions are worth recording because they are easy to undo by accident.
 
@@ -683,7 +610,3 @@ A few decisions are worth recording because they are easy to undo by accident.
   `kernel_main()`, or it will never execute.
 
 ---
-
-*Milestone 1: the screen is the right colour, the CPU is the right width, and
-the machine stops when asked. Milestone 2: when it stops, it now explains why —
-and if you want to do anything else, you had better ask nicely.*
