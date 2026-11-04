@@ -18,7 +18,7 @@ statements are rejected outright.
 
 Built-ins are `help`, `about`, `echo`, `clear`, `halt`, `panic`, and `reboot`.
 The full manners rules and the current error strings are documented in
-[docs/32BIT.md](docs/32BIT.md).
+[docs/DOCS.md](docs/DOCS.md).
 
 ## Quick start
 
@@ -90,7 +90,7 @@ Debian/Ubuntu), `ld`, `objcopy`, `python3`, and optionally `qemu-system-i386`
 │   ├── shell.h
 │   └── linker32.ld     — Links the kernel at 1 MiB
 ├── docs/
-│   ├── 32BIT.md        — Architecture, boot path, console, IDT, keyboard, brash
+│   ├── DOCS.md        — Architecture, boot path, console, IDT, keyboard, brash
 │   └── BUILD.md        — Build, run, shell, and headless test instructions
 ├── LICENSES/
 │   └── JetBrainsMono-OFL.txt — SIL OFL 1.1 text for the bitmap font
@@ -100,7 +100,7 @@ Debian/Ubuntu), `ld`, `objcopy`, `python3`, and optionally `qemu-system-i386`
 
 ## Documentation
 
-- **[docs/32BIT.md](docs/32BIT.md)** — memory and disk layout, boot sequence,
+- **[docs/DOCS.md](docs/DOCS.md)** — memory and disk layout, boot sequence,
   VBE mode selection, BootInfo, console rendering, IDT and panic path, keyboard
   and `brash`, limitations, and the milestone-2 plan
 - **[docs/BUILD.md](docs/BUILD.md)** — build, run, verify the image, drive the

@@ -2,7 +2,7 @@
 
 This tree builds the 32-bit image: protected mode, a VBE framebuffer console, a
 polled PS/2 keyboard, and the first iteration of `brash`. See
-[32BIT.md](32BIT.md) for the architecture.
+[DOCS.md](DOCS.md) for the architecture.
 
 ## Prerequisites
 
@@ -248,7 +248,7 @@ kernel at LBA 9.
 
 **The build says the kernel is too big.** Raise `KERNEL_SECTORS` in
 `src/stage2.asm` and update the image layout notes in `build.sh` and
-[docs/32BIT.md](32BIT.md). The kernel must still fit in the 128 KiB staging
+[docs/DOCS.md](DOCS.md). The kernel must still fit in the 128 KiB staging
 area at `0x10000`; raise the stage-2 copy loop and the disk region together.
 
 **“no 32-bpp VBE linear framebuffer mode found.”** The firmware did not offer an
