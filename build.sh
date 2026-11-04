@@ -13,6 +13,9 @@
 #
 # Or:
 #   ./build.sh --run
+#
+# Running ./build.sh in a terminal also offers to boot the image when the
+# build finishes. Pass --no-run to skip that prompt.
 # =====================================================================
 set -e
 
@@ -98,6 +101,20 @@ echo "    Kernel:  ${KERNEL_SIZE} bytes (limit ${KERNEL_MAX})"
 echo "    Disk:    $(stat -c%s "$OUT/os.img") bytes"
 
 if [ "${1:-}" = "--run" ]; then
+    RUN_QEMU=1
+elif [ "${1:-}" = "--no-run" ]; then
+    RUN_QEMU=0
+elif [ -t 0 ]; then
+    RUN_QEMU=0
+    read -r -p "[?] Boot in QEMU now? [y/N] " answer || true
+    case "$answer" in
+        [yY] | [yY][eE][sS]) RUN_QEMU=1 ;;
+    esac
+else
+    RUN_QEMU=0
+fi
+
+if [ "$RUN_QEMU" = 1 ]; then
     echo "[*] Launching QEMU..."
     exec qemu-system-i386 \
         -drive file="$OUT/os.img",format=raw,if=ide \

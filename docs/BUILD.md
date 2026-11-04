@@ -78,6 +78,10 @@ Or build and run in one step:
 ./build.sh --run
 ```
 
+When run from an interactive terminal, `./build.sh` also offers to boot the
+image after a successful build. Answer `y` to launch QEMU, or pass `--no-run` to
+skip the prompt.
+
 `-vga std` is recommended because it provides a 32-bpp VBE mode with a linear
 framebuffer. `-vga cirrus` and `-vga vmware` generally work too, but their mode
 numbers differ.

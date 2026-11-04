@@ -34,6 +34,9 @@ Or build and run in one step:
 ./build.sh --run
 ```
 
+Running `./build.sh` in a terminal also asks whether to boot the image when the
+build finishes. Pass `--no-run` to skip the prompt.
+
 Dependencies: `nasm`, `gcc` with 32-bit support (`gcc-multilib` on
 Debian/Ubuntu), `ld`, `objcopy`, `python3`, and optionally `qemu-system-i386`
 and `socat` for the headless screenshot check.
