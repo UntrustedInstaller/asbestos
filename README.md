@@ -13,6 +13,10 @@ The kernel boots, enters ring 0 with flat segments and no paging, selects a
 That is the whole of milestone 1. There is no keyboard, disk driver, filesystem,
 or shell yet. It prints its diagnostics and halts.
 
+When it arrives, the shell will be called **brash** — the Asbestos SHell. The
+manners gate comes with it: alternate `please` and `sorry`, use the exact
+required error strings, and never compound statements.
+
 Milestone 2 has started with an IDT and a panic screen: any CPU exception now
 stops the machine with a readable oops-style report instead of a triple-fault
 reboot. Hardware interrupts are still masked.
@@ -102,7 +106,8 @@ and `socat` for the headless screenshot check.
 3. PS/2 keyboard driver
 4. ATA PIO driver
 5. FAT16/FAT32 read-only filesystem
-6. Shell and the alternating `please` / `sorry` manners gate
+6. **`brash`** — the Asbestos SHell — and the alternating `please` / `sorry`
+   manners gate
 7. Write support and loadable modules
 
 ## License

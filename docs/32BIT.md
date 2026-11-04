@@ -7,8 +7,8 @@
 Milestone 1 is deliberately narrow: leave the BIOS behind, enter flat 32-bit
 protected mode, put the machine into a VBE linear-framebuffer mode, and draw an
 80×25 text console in exactly the two colours the project requires. There is no
-interrupt controller, no keyboard driver, no filesystem, and no shell yet. Those
-are milestone 2.
+interrupt controller, no keyboard driver, no filesystem, and no `brash` shell
+yet. Those are milestone 2.
 
 **Only the BIOS-required boot stub and stage 2 loader are 16-bit.** Once the CPU
 enters protected mode, every instruction executed is 32-bit.
@@ -457,7 +457,8 @@ Milestone 1 intentionally lacks:
   not remapped and no IRQ fires.
 - **Input** — the console is output-only.
 - **Storage** — no ATA PIO driver and no FAT16/FAT32 layer yet.
-- **Shell** — no command loop, no manners gate, no user commands.
+- **`brash`** — the Asbestos SHell — does not exist yet: no command loop, no
+  manners gate, no user commands.
 - **Memory management** — no paging, no allocator, no memory map parsing.
 - **Multiple consoles** — one global console, no colour attributes.
 - **Text modes** — VBE graphics only; if no 32-bpp linear mode exists, boot fails
@@ -472,8 +473,14 @@ and a firmware that leaves A20 controllable through port `0x92`.
 
 ## 11. Milestone 2 and beyond
 
-Milestone 2 is in progress. The IDT and panic screen are done; the intended
-order for the rest is:
+Milestone 2 is in progress. The IDT and panic screen are done.
+
+The shell is called **`brash`**, the Asbestos SHell. It is a recursive acronym,
+which should tell you most of what you need to know about its manners. The
+`please` / `sorry` gate, the exact error strings, and the ban on compound
+statements are not optional features; they are the point.
+
+The intended order for the rest is:
 
 1. ~~**IDT and exception handling.**~~ Done: faults now produce a readable panic
    screen instead of a triple-fault reboot.
@@ -485,8 +492,9 @@ order for the rest is:
    with LBA28. Polling is fine to start.
 5. **FAT16/FAT32 read-only layer.** BPB validation, cluster chains, directory
    traversal, `open`/`read`.
-6. **Shell and manners gate.** Reintroduce the alternating `please` / `sorry`
-   protocol, exact error strings, and no compound statements.
+6. **`brash` and the manners gate.** Implement the Asbestos SHell: a command
+   loop, the alternating `please` / `sorry` protocol, exact error strings, and
+   no compound statements.
 7. **Write support and loadable modules.** Only after the read path is stable.
 
 Each step should keep the serial log and screenshot checks working so
