@@ -72,18 +72,16 @@ build fails with the actual size and the constant to increase.
 
 ### Regenerating the font
 
-`src/font8x16.h` is generated from JetBrains Mono and checked in, so the normal
+`src/font8x16.h` is generated from Terminus Bold and checked in, so the normal
 build has no font dependencies.
 
-The generator script is not included in this tree. To change the font, rasterise
-ASCII `0x20`–`0x7F` at 13 px with the baseline on row 12 — the largest size where
-every JetBrains Mono glyph fits an 8×16 cell — into 96 glyphs of 16 bytes each,
-one byte per scanline with the most-significant bit on the left. Pillow is a
-convenient way to do it, but nothing in the build depends on Pillow. Rebuild and
+The generator script is not included in this tree. To change the font, parse
+the BDF for ASCII `0x20`–`0x7E` at 16 px into 95 glyphs of 16 bytes each,
+one byte per scanline with the most-significant bit on the left. Rebuild and
 re-run the screenshot check afterwards: the glyphs change, the two-colour
 histogram must not.
 
-The bitmap is a derivative of JetBrains Mono and stays under the SIL OFL 1.1.
+The bitmap is a derivative of Terminus Bold and stays under the SIL OFL 1.1.
 Keep `LICENSES/JetBrainsMono-OFL.txt` with the tree if you redistribute it.
 
 ## Run

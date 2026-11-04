@@ -199,27 +199,24 @@ attribute per cell yet; foreground and background are global console state.
 
 ### Font
 
-`src/font8x16.h` contains 96 glyphs (ASCII `0x20`–`0x7F`), 16 bytes per glyph,
+`src/font8x16.h` contains 95 glyphs (ASCII `0x20`–`0x7E`), 16 bytes per glyph,
 one byte per scanline with the most-significant bit on the left.
 
-The glyphs are rasterised from **JetBrains Mono Regular** at 13 px with the
-baseline on row 12. Thirteen pixels is the largest size at which the typeface
-fits the 8×16 cell: at 14 px the advance is 8.41 px and `W`, `%`, and `&` grow
-to nine pixels wide, while at 12 px the glyphs get noticeably smaller than the
-cell. Rendering at the cell size directly (rather than at a large size and
-downscaling) keeps every stem on a whole pixel and every glyph inside its cell.
+The glyphs are rasterised from **Terminus Bold** at 16 px. Sixteen pixels is
+the native size of the typeface and fits the 8×16 cell exactly. Rendering at
+the cell size directly keeps every stem on a whole pixel and every glyph inside
+its cell.
 
 The table is generated, not hand-edited. The generator script is deliberately
-not part of this tree; the checked-in header was produced with a small
-Pillow-based rasteriser from JetBrains Mono Regular at 13 px with the baseline
-on row 12, one byte per scanline, most-significant bit on the left, for ASCII
-`0x20`–`0x7F`.
+not part of this tree; the checked-in header was produced by parsing
+`ter-u16b.bdf` (Terminus Bold 16px), one byte per scanline, most-significant
+bit on the left, for ASCII `0x20`–`0x7E`.
 
-The header is checked in, so a normal build needs neither Pillow nor the
-TrueType file. JetBrains Mono is licensed under the SIL Open Font License 1.1
+The header is checked in, so a normal build needs neither the BDF file nor any
+rasteriser. Terminus is licensed under the SIL Open Font License 1.1
 and the bitmap is a derivative of it; the licence text is in
-`LICENSES/JetBrainsMono-OFL.txt`. Do not replace the header with a font that has
-no compatible licence.
+`LICENSES/JetBrainsMono-OFL.txt`. Do not replace the header with a font that
+has no compatible licence.
 
 To swap in another monospace face, rasterise it with the same cell size,
 baseline, bit order, and table layout, then re-run the boot checks: the glyph

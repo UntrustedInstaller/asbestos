@@ -56,9 +56,9 @@ Debian/Ubuntu), `ld`, `objcopy`, `python3`, and optionally `qemu-system-i386`
   editor
 - **`brash`** — a fixed-prompt shell with built-ins and a `please` / `sorry`
   manners gate
-- **JetBrains Mono bitmap font** — 8×16 glyphs for ASCII `0x20`–`0x7F`,
-  rasterised from JetBrains Mono at 13 px and licensed under the SIL OFL 1.1  
-  *I like JetBrains Mono.*
+- **Terminus bitmap font** — 8×16 glyphs for ASCII `0x20`–`0x7E`,
+  rasterised from Terminus Bold 16px and licensed under the SIL OFL 1.1
+  *I like Terminus.*
 
 ## Project structure
 
@@ -72,7 +72,7 @@ Debian/Ubuntu), `ld`, `objcopy`, `python3`, and optionally `qemu-system-i386`
 │   ├── console.c       — VBE framebuffer 80×25 console
 │   ├── console.h
 │   ├── boot_info.h     — BootInfo passed from stage 2 to the kernel
-│   ├── font8x16.h      — JetBrains Mono 8×16 bitmap (generated)
+│   ├── font8x16.h      — Terminus 8×16 bitmap
 │   ├── serial.c        — COM1 output for testing
 │   ├── serial.h
 │   ├── string.c        — Freestanding memory/string helpers
@@ -121,7 +121,7 @@ Debian/Ubuntu), `ld`, `objcopy`, `python3`, and optionally `qemu-system-i386`
 
 GNU General Public License v3.0. See [LICENSE](LICENSE).
 
-The bitmap font in `src/font8x16.h` is derived from JetBrains Mono and is
+The bitmap font in `src/font8x16.h` is derived from Terminus Bold and is
 distributed under the SIL Open Font License, Version 1.1. See
 [LICENSES/JetBrainsMono-OFL.txt](LICENSES/JetBrainsMono-OFL.txt).
 
