@@ -57,7 +57,7 @@ CFLAGS="-m32 -march=i386 -mtune=i386 -ffreestanding -fno-builtin \
         -fno-asynchronous-unwind-tables -fno-unwind-tables \
         -nostdlib -O2 -Wall -Wextra -Isrc"
 
-for src in kernel console string serial idt panic keyboard shell; do
+for src in kernel console string serial idt panic keyboard shell ata_pio; do
     echo "[*] Compiling src/${src}.c..."
     # shellcheck disable=SC2086
     gcc $CFLAGS -c "src/${src}.c" -o "$OUT/${src}.o"
@@ -75,6 +75,7 @@ ld -m elf_i386 -T src/linker32.ld \
     "$OUT/panic.o" \
     "$OUT/keyboard.o" \
     "$OUT/shell.o" \
+    "$OUT/ata_pio.o" \
     -o "$OUT/kernel.elf"
 
 objcopy -O binary -j .text -j .rodata -j .data "$OUT/kernel.elf" "$OUT/kernel.bin"

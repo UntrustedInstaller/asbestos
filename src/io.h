@@ -33,6 +33,16 @@ static inline void cpu_pause(void) {
     __asm__ __volatile__("pause");
 }
 
+static inline uint16_t inw(uint16_t port) {
+    uint16_t value;
+    __asm__ __volatile__("inw %1, %0" : "=a"(value) : "Nd"(port));
+    return value;
+}
+
+static inline void outw(uint16_t port, uint16_t value) {
+    __asm__ __volatile__("outw %0, %1" : : "a"(value), "Nd"(port));
+}
+
 static inline uint32_t read_cr0(void) {
     uint32_t value;
     __asm__ __volatile__("mov %%cr0, %0" : "=r"(value));
