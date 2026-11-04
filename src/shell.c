@@ -278,7 +278,7 @@ static void dispatch(char *text) {
 
 void shell_run(void) {
     console_puts("\nbrash " SHELL_VERSION " - the Asbestos SHell\n");
-    console_puts("Use your manners.\n\n");
+    console_puts("Use your manners.\n");
 
     for (;;) {
         console_puts("usr@brash> ");

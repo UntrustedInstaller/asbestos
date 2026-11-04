@@ -36,41 +36,7 @@ void kernel_main(void) {
     console_clear();
 
     console_puts("asbestOS\n");
-    console_puts("difficult. by design.\n\n");
-
-    console_puts("Framebuffer: ");
-    console_put_hex32(bi->fb_addr);
-    console_puts("\n");
-
-    console_puts("Mode:        ");
-    console_put_dec(bi->width);
-    console_puts("x");
-    console_put_dec(bi->height);
-    console_puts("x");
-    console_put_dec(bi->bpp);
-    console_puts("\n");
-
-    console_puts("Pitch:       ");
-    console_put_dec(bi->pitch);
-    console_puts(" bytes/scanline\n");
-
-    console_puts("VBE mode:    ");
-    console_put_hex32(bi->mode);
-    console_puts("\n");
-
-    console_puts("Masks:       R");
-    console_put_dec(bi->red_size);
-    console_puts("@");
-    console_put_dec(bi->red_pos);
-    console_puts(" G");
-    console_put_dec(bi->green_size);
-    console_puts("@");
-    console_put_dec(bi->green_pos);
-    console_puts(" B");
-    console_put_dec(bi->blue_size);
-    console_puts("@");
-    console_put_dec(bi->blue_pos);
-    console_puts("\n");
+    console_puts("difficult. by design.\n");
 
     keyboard_init();
     shell_run();
