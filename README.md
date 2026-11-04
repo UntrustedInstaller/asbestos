@@ -31,8 +31,8 @@ Prefix a command with `please`. Any error creates an apology debt: the next
 command must start with `sorry`. A successful command clears the debt. Compound
 statements are rejected outright.
 
-Built-ins are `help`, `about`, `echo`, `clear`, `halt`, and `panic`. The full
-manners rules and the current error strings are documented in
+Built-ins are `help`, `about`, `echo`, `clear`, `halt`, `panic`, and `reboot`.
+The full manners rules and the current error strings are documented in
 [docs/32BIT.md](docs/32BIT.md).
 
 ## Quick start

@@ -493,6 +493,7 @@ The first iteration is built-in only:
 | `clear` | Clear the console |
 | `halt` | Stop the machine |
 | `panic` | Force a divide error and enter the panic screen |
+| `reboot` | Reset the machine |
 
 The line editor supports printable ASCII and Backspace. The input buffer is 64
 bytes, and the parser accepts at most 8 whitespace-separated tokens. There is no
@@ -518,6 +519,7 @@ Commands
   clear          clear the screen
   halt           stop the machine
   panic          force a CPU fault
+  reboot         reboot the machine
 
 Prefix a command with "please".
 After an error, apologise with "sorry".

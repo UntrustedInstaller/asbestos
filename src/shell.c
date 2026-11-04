@@ -141,6 +141,7 @@ static void command_help(void) {
     console_puts("  clear          clear the screen\n");
     console_puts("  halt           stop the machine\n");
     console_puts("  panic          force a CPU fault\n");
+    console_puts("  reboot         reboot the machine\n");
     console_puts("\n");
     console_puts("Prefix a command with \"please\".\n");
     console_puts("After an error, apologise with \"sorry\".\n");
@@ -185,6 +186,32 @@ static void command_panic(void) {
 
     /* The divide above raises #DE. If it somehow returns, stop anyway. */
     panic("panic command failed to fault", 0);
+}
+
+/*
+ * Send 0xFE (the 8042 reboot signal) to 0x64
+ * This pulses the CPU's reset line, forcing a reboot.
+ */
+static void command_reboot(void) {
+    cpu_cli();
+    /* Give controller a (limited) chance to be ready */
+    for (int i = 0; i < 100000; i++) {
+        if (!(inb(0x64) & 0x02)) {
+            /* Send the reboot signal to 0x64 */
+            outb(0x64, 0xFE);
+            break;
+        }
+        io_wait();
+    }
+
+    /* Fallback in case the machine ignores 8042 signals */
+    outb(0xCF9, 0x02);
+    outb(0xCF9, 0x06);
+
+    /* Last resort: halt and do not return to the shell. */
+    for (;;) {
+        cpu_halt();
+    }
 }
 
 static void dispatch(char *text) {
@@ -236,6 +263,8 @@ static void dispatch(char *text) {
         command_halt();
     } else if (strcmp(command, "panic") == 0) {
         command_panic();
+    } else if (strcmp(command, "reboot") == 0) {
+        command_reboot();
     } else {
         console_puts(SHELL_ERROR_UNKNOWN);
         console_puts(command);
