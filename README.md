@@ -2,24 +2,38 @@
 
 An intentionally abrasive operating system inspired by INTERCAL.
 
-## Current state: milestone 1, milestone 2 underway
+## Current state: milestone 1 complete, milestone 2 underway
 
-The kernel boots, enters ring 0 with flat segments and no paging, selects a
-32-bpp VBE mode, and draws an 80×25 text console in exact 24-bit colour:
+Milestone 1 is complete: the kernel boots, enters ring 0 with flat segments and
+no paging, selects a 32-bpp VBE mode, and draws an 80×25 text console in exact
+24-bit colour:
 
 - **Background:** `#4B2222`
 - **Foreground:** `#C39393`
 
-That is the whole of milestone 1. There is no keyboard, disk driver, filesystem,
-or shell yet. It prints its diagnostics and halts.
+Milestone 2 currently has:
 
-When it arrives, the shell will be called **brash** — the Asbestos SHell. The
-manners gate comes with it: alternate `please` and `sorry`, use the exact
-required error strings, and never compound statements.
+- **IDT and panic screen** — any CPU exception stops the machine with a readable
+  oops-style report instead of a triple-fault reboot
+- **Polled PS/2 keyboard** — scancode set 1, shift, caps lock, backspace, enter,
+  and tab
+- **`brash`** — the Asbestos SHell — first iteration, with built-in commands and
+  the manners gate
 
-Milestone 2 has started with an IDT and a panic screen: any CPU exception now
-stops the machine with a readable oops-style report instead of a triple-fault
-reboot. Hardware interrupts are still masked.
+Hardware interrupts are still masked, and there is no storage driver or
+filesystem yet. `brash` cannot run programs or touch a disk.
+
+## brash
+
+`brash` is the Asbestos SHell. Its prompt is always `usr@brash>`.
+
+Prefix a command with `please`. Any error creates an apology debt: the next
+command must start with `sorry`. A successful command clears the debt. Compound
+statements are rejected outright.
+
+Built-ins are `help`, `about`, `echo`, `clear`, `halt`, and `panic`. The full
+manners rules and the current error strings are documented in
+[docs/32BIT.md](docs/32BIT.md).
 
 ## Quick start
 
@@ -54,6 +68,10 @@ and `socat` for the headless screenshot check.
 - **Serial diagnostics** — COM1 output for headless boot verification
 - **IDT and panic screen** — 256 exception stubs, a C dispatcher, and an
   oops-style report with a `PANIC` banner and register dump
+- **Polled PS/2 keyboard** — scancode set 1, modifier tracking, and a small line
+  editor
+- **`brash`** — a fixed-prompt shell with built-ins and a `please` / `sorry`
+  manners gate
 - **JetBrains Mono bitmap font** — 8×16 glyphs for ASCII `0x20`–`0x7F`,
   rasterised from JetBrains Mono at 13 px and licensed under the SIL OFL 1.1
 
@@ -65,7 +83,7 @@ and `socat` for the headless screenshot check.
 │   ├── boot.asm        — Stage 1 boot sector
 │   ├── stage2.asm      — Disk load, VBE setup, GDT, protected-mode entry
 │   ├── entry32.asm     — 32-bit entry, BSS zeroing, C call
-│   ├── kernel.c        — Milestone-1 kernel
+│   ├── kernel.c        — Kernel entry: validate BootInfo, start console and brash
 │   ├── console.c       — VBE framebuffer 80×25 console
 │   ├── console.h
 │   ├── boot_info.h     — BootInfo passed from stage 2 to the kernel
@@ -81,10 +99,14 @@ and `socat` for the headless screenshot check.
 │   ├── isr.asm         — 256 exception stubs and isr_common
 │   ├── panic.c         — Panic screen and serial fault report
 │   ├── panic.h
+│   ├── keyboard.c      — Polled PS/2 keyboard, scancode set 1
+│   ├── keyboard.h
+│   ├── shell.c         — brash: line editor, parser, manners gate, built-ins
+│   ├── shell.h
 │   └── linker32.ld     — Links the kernel at 1 MiB
 ├── docs/
-│   ├── 32BIT.md        — Architecture, boot path, console internals
-│   └── BUILD.md        — Build, run, and headless test instructions
+│   ├── 32BIT.md        — Architecture, boot path, console, IDT, keyboard, brash
+│   └── BUILD.md        — Build, run, shell, and headless test instructions
 ├── LICENSES/
 │   └── JetBrainsMono-OFL.txt — SIL OFL 1.1 text for the bitmap font
 ├── LICENSE
@@ -94,20 +116,20 @@ and `socat` for the headless screenshot check.
 ## Documentation
 
 - **[docs/32BIT.md](docs/32BIT.md)** — memory and disk layout, boot sequence,
-  VBE mode selection, BootInfo, console rendering, IDT and panic path,
-  limitations, and the milestone-2 plan
-- **[docs/BUILD.md](docs/BUILD.md)** — build, run, verify the image, and test the
-  exception path
+  VBE mode selection, BootInfo, console rendering, IDT and panic path, keyboard
+  and `brash`, limitations, and the milestone-2 plan
+- **[docs/BUILD.md](docs/BUILD.md)** — build, run, verify the image, drive the
+  shell headlessly, and test the exception path
 
 ## Roadmap
 
 1. ~~IDT and exception handling~~ — done
 2. PIC remap and PIT
-3. PS/2 keyboard driver
+3. PS/2 keyboard driver — polled first pass done; IRQ-driven input later
 4. ATA PIO driver
 5. FAT16/FAT32 read-only filesystem
-6. **`brash`** — the Asbestos SHell — and the alternating `please` / `sorry`
-   manners gate
+6. **`brash`** — the Asbestos SHell — first iteration done; grow it once there is
+   a filesystem
 7. Write support and loadable modules
 
 ## License

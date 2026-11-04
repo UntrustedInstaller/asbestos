@@ -1,14 +1,17 @@
-# asbestOS 32-bit — Milestone 1 and the start of Milestone 2
+# asbestOS 32-bit — Milestone 2 in progress
 
-> **Status:** working draft. Milestone 1 boots, renders, and halts correctly
-> under QEMU. Milestone 2 has started with the IDT and panic screen. This
-> document describes the entire current tree in `src/`.
+> **Status:** working draft. Milestone 1 boots and renders correctly under QEMU.
+> Milestone 2 has an IDT, a panic screen, a polled PS/2 keyboard, and the first
+> iteration of `brash`. This document describes the entire current tree in
+> `src/`.
 
 Milestone 1 is deliberately narrow: leave the BIOS behind, enter flat 32-bit
 protected mode, put the machine into a VBE linear-framebuffer mode, and draw an
-80×25 text console in exactly the two colours the project requires. There is no
-interrupt controller, no keyboard driver, no filesystem, and no `brash` shell
-yet. Those are milestone 2.
+80×25 text console in exactly the two colours the project requires.
+
+Milestone 2 adds exception handling, a polled keyboard, and `brash`. There is
+still no interrupt controller, no storage driver, and no filesystem; hardware
+interrupts remain masked.
 
 **Only the BIOS-required boot stub and stage 2 loader are 16-bit.** Once the CPU
 enters protected mode, every instruction executed is 32-bit.
@@ -17,18 +20,20 @@ enters protected mode, every instruction executed is 32-bit.
 
 ## 1. Target architecture
 
-| Property        | Milestone 1 choice                                   |
-|-----------------|------------------------------------------------------|
-| CPU mode        | 32-bit protected mode                                |
-| Privilege level | Ring 0                                               |
-| Segmentation    | Flat: code `0x08`, data `0x10`, base 0, limit 4 GiB  |
-| Paging          | Off                                                  |
+| Property        | Current choice                                      |
+|-----------------|-----------------------------------------------------|
+| CPU mode        | 32-bit protected mode                               |
+| Privilege level | Ring 0                                              |
+| Segmentation    | Flat: code `0x08`, data `0x10`, base 0, limit 4 GiB |
+| Paging          | Off                                                 |
 | Interrupts      | IDT installed; exceptions caught, hardware IRQs masked |
-| Kernel location | Linked and run at `0x00100000` (1 MiB)               |
-| Kernel stack    | Top at `0x00090000`, grows down                      |
-| Firmware        | BIOS (no UEFI)                                       |
-| Display         | VBE linear framebuffer, 32 bpp                       |
-| Storage target  | ATA PIO (not used yet), FAT16/FAT32 later            |
+| Input           | Polled PS/2 keyboard, scancode set 1                |
+| Shell           | `brash`, fixed prompt, built-in commands only       |
+| Kernel location | Linked and run at `0x00100000` (1 MiB)              |
+| Kernel stack    | Top at `0x00090000`, grows down                     |
+| Firmware        | BIOS (no UEFI)                                      |
+| Display         | VBE linear framebuffer, 32 bpp                      |
+| Storage target  | ATA PIO (not used yet), FAT16/FAT32 later           |
 
 No paging means addresses in the kernel are physical addresses. That is fine
 while the kernel is the only thing running and the firmware has set up the
@@ -50,7 +55,7 @@ src/
 ├── boot.asm        Stage 1 boot sector (16-bit, BIOS LBA read)
 ├── stage2.asm      Stage 2 loader (16-bit: disk, VBE, A20, GDT, PM entry)
 ├── entry32.asm     32-bit kernel entry: segments, stack, BSS, call C
-├── kernel.c        Kernel entry: validate BootInfo, initialise, print, halt
+├── kernel.c        Kernel entry: validate BootInfo, start console and brash
 ├── console.c       VBE framebuffer 80×25 text console
 ├── console.h
 ├── boot_info.h     BootInfo struct shared with stage2.asm
@@ -66,6 +71,10 @@ src/
 ├── isr.asm         256 generated exception stubs, isr_common
 ├── panic.c         Panic screen and serial fault report
 ├── panic.h
+├── keyboard.c      Polled PS/2 keyboard, scancode set 1
+├── keyboard.h
+├── shell.c         brash: line editor, parser, manners gate, built-ins
+├── shell.h
 └── linker32.ld     Links the kernel at 0x00100000
 ```
 
@@ -154,9 +163,10 @@ safe: the source and destination ranges do not overlap.
    - Zeroes `.bss` between `_bss_start` and `_bss_end`.
    - Calls `kernel_main()`.
 5. **`kernel_main()`**
-   - Initialises COM1.
+   - Initialises COM1 and installs the IDT.
    - Validates `BootInfo`.
-   - Initialises the console, prints the banner and diagnostics, and halts.
+   - Initialises the console and prints the banner and diagnostics.
+   - Drains the keyboard controller and enters `brash`, which never returns.
 
 ---
 
@@ -417,7 +427,111 @@ line up.
 
 ---
 
-## 9. Build and run
+## 9. Keyboard and brash
+
+### Polled PS/2 keyboard
+
+`src/keyboard.c` reads the 8042 controller directly through ports `0x64`
+(status) and `0x60` (data). It is polling-only because the PIC has not been
+remapped and hardware interrupts are still masked. `kernel_main()` calls
+`keyboard_init()` to drain anything the firmware left in the output buffer, then
+`brash` spins on `keyboard_poll()`.
+
+`keyboard_poll()` returns `0` when no key is ready. Otherwise it returns ASCII
+for printable keys, `\b` for Backspace, `\n` for Enter, and `\t` for Tab. It
+consumes key releases, tracks left/right Shift and Caps Lock, and drops extended
+(`0xE0`-prefixed) keys such as arrows. It also ignores bytes flagged as AUX
+(mouse) data.
+
+The driver assumes scancode set 1, which is what the 8042 translation mode
+produces on the target machines. Unsupported keys are simply ignored. The shell
+idles with `cpu_pause()` rather than `hlt` because there is no interrupt to wake
+it; that busy-wait is a deliberate first-iteration cost, not the final design.
+
+### brash
+
+`brash` is the Asbestos SHell. Its prompt is always `usr@brash>` followed by a
+space, so it looks like:
+
+```text
+usr@brash>
+```
+
+The prompt does **not** reveal the required manners word. The rule is:
+
+- A command normally starts with `please`.
+- Any error sets an **apology debt**. The next command must start with `sorry`.
+- A successful command clears the debt.
+- Blank lines are ignored and do not clear the debt.
+- `sorry` used when no error occurred is itself an error, which creates an
+  apology debt.
+
+Everything the shell counts as an error sets the debt: the wrong magic word, an
+empty command, a compound statement, too many arguments, and an unknown command.
+A malformed apology does not clear an existing debt.
+
+The error strings are provisional and live together at the top of `src/shell.c`:
+
+| Situation | Output |
+|-----------|--------|
+| `please` required | `That is not the magic word. Say "please".` |
+| `sorry` required | `An apology would be nice. Say "sorry".` |
+| Compound statement | `Compound statements are not permitted. I can't multitask well` |
+| No command after the magic word | `No command was given. Do you normally stare blankly at people?` |
+| Too many tokens | `Too many arguments. I can't keep track of all of that.` |
+| Unknown command | `Unknown command: <name>` |
+
+### Commands and parsing
+
+The first iteration is built-in only:
+
+| Command | Effect |
+|---------|--------|
+| `help` | List the commands and the manners rule |
+| `about` | Print the shell name and version |
+| `echo <text>` | Print the remaining arguments, separated by single spaces |
+| `clear` | Clear the console |
+| `halt` | Stop the machine |
+| `panic` | Force a divide error and enter the panic screen |
+
+The line editor supports printable ASCII and Backspace. The input buffer is 64
+bytes, and the parser accepts at most 8 whitespace-separated tokens. There is no
+quoting, escaping, history, cursor movement, globbing, or tab completion.
+
+There is also no compound-statement support. Any of `;`, `&`, `|`, `<`, `>`,
+`(`, `)`, or a backtick causes the whole line to be rejected before it is
+tokenised. That covers chaining, pipes, redirection, and subshell syntax without
+pretending to parse them.
+
+A short session:
+
+```text
+usr@brash> help
+That is not the magic word. Say "please".
+usr@brash> please help
+An apology would be nice. Say "sorry".
+usr@brash> sorry help
+Commands
+  help           show this list
+  about          identify this shell
+  echo <text>    print text
+  clear          clear the screen
+  halt           stop the machine
+  panic          force a CPU fault
+
+Prefix a command with "please".
+After an error, apologise with "sorry".
+usr@brash> please echo hi
+hi
+usr@brash>
+```
+
+Each entered line is mirrored to COM1 as `brash: <line>`, which makes headless
+testing possible without decoding the framebuffer.
+
+---
+
+## 10. Build and run
 
 See [BUILD.md](BUILD.md) for the full instructions. In short:
 
@@ -442,23 +556,29 @@ Expected serial output from a successful boot:
 
 ```
 asbestOS kernel entered
-Halting in kernel_main
 ```
 
-A correct screenshot contains only two colours: `#4B2222` and `#C39393`.
+The serial log then stays quiet until a line is entered at `usr@brash>`. Each
+entered line is mirrored as `brash: <line>`; `halt` also prints
+`brash: halted by user`. A correct screenshot contains only two colours:
+`#4B2222` and `#C39393`.
 
 ---
 
-## 10. Current limitations
+## 11. Current limitations
 
-Milestone 1 intentionally lacks:
+The tree is still deliberately incomplete:
 
 - **Hardware interrupts** — the IDT and exception path exist, but the PIC is
-  not remapped and no IRQ fires.
-- **Input** — the console is output-only.
+  not remapped and no IRQ fires. Input is therefore polled.
+- **Polled input** — `brash` busy-waits on the keyboard with `cpu_pause()`.
+  There is no IRQ-driven keyboard and no input timeout yet.
 - **Storage** — no ATA PIO driver and no FAT16/FAT32 layer yet.
-- **`brash`** — the Asbestos SHell — does not exist yet: no command loop, no
-  manners gate, no user commands.
+- **`brash`** — built-in commands only. It cannot run programs, read files, or
+  touch the disk.
+- **Line editing** — printable ASCII and Backspace only. No cursor movement, no
+  history, no quoting or escaping, no globbing, no tab completion.
+- **Compound statements** — rejected outright rather than parsed.
 - **Memory management** — no paging, no allocator, no memory map parsing.
 - **Multiple consoles** — one global console, no colour attributes.
 - **Text modes** — VBE graphics only; if no 32-bpp linear mode exists, boot fails
@@ -471,30 +591,32 @@ and a firmware that leaves A20 controllable through port `0x92`.
 
 ---
 
-## 11. Milestone 2 and beyond
+## 12. Milestone 2 and beyond
 
-Milestone 2 is in progress. The IDT and panic screen are done.
+Milestone 2 is in progress. The IDT and panic screen, the polled PS/2 keyboard,
+and the first iteration of `brash` are done.
 
-The shell is called **`brash`**, the Asbestos SHell. It is a recursive acronym,
-which should tell you most of what you need to know about its manners. The
-`please` / `sorry` gate, the exact error strings, and the ban on compound
+The shell is called **`brash`**, the Asbestos SHell. Its prompt is `usr@brash>`.
+Commands are prefixed with `please`; after an error, the next command must be
+prefixed with `sorry`. The exact error strings and the ban on compound
 statements are not optional features; they are the point.
 
 The intended order for the rest is:
 
 1. ~~**IDT and exception handling.**~~ Done: faults now produce a readable panic
    screen instead of a triple-fault reboot.
-2. **PIC remap and PIT.** A timer tick is the foundation for input timeouts and
-   later scheduling.
-3. **PS/2 keyboard driver.** Scan-code set 1, shifted characters, arrows,
-   backspace, Enter.
+2. **PIC remap and PIT.** A timer tick is the foundation for IRQ-driven input
+   and later scheduling.
+3. ~~**PS/2 keyboard driver.**~~ Polled first pass done: scancode set 1,
+   shifted characters, Caps Lock, Backspace, Enter, and Tab. Move it behind
+   IRQ 1 once the PIC is remapped.
 4. **ATA PIO driver.** Identify the disk from `BootInfo.boot_drive`, read sectors
    with LBA28. Polling is fine to start.
 5. **FAT16/FAT32 read-only layer.** BPB validation, cluster chains, directory
    traversal, `open`/`read`.
-6. **`brash` and the manners gate.** Implement the Asbestos SHell: a command
-   loop, the alternating `please` / `sorry` protocol, exact error strings, and
-   no compound statements.
+6. ~~**`brash` and the manners gate.**~~ First iteration done: a fixed
+   `usr@brash>` prompt, `please` normally, `sorry` after an error, exact error
+   strings, and no compound statements. Grow it once there is a filesystem.
 7. **Write support and loadable modules.** Only after the read path is stable.
 
 Each step should keep the serial log and screenshot checks working so
@@ -502,7 +624,7 @@ regressions are obvious.
 
 ---
 
-## 12. Design notes and gotchas
+## 13. Design notes and gotchas
 
 A few decisions are worth recording because they are easy to undo by accident.
 
@@ -533,8 +655,33 @@ A few decisions are worth recording because they are easy to undo by accident.
   consumes two rows if it is followed by `\n`. The panic rules are 79 columns
   for that reason. Keep the panic screen at or below 24 printed rows so the
   final newline does not scroll the banner away.
+- **The keyboard is polling-only on purpose.** The PIC is not remapped, so
+  `keyboard_init()` drains whatever the firmware left in the 8042 output buffer
+  and `brash` spins on `keyboard_poll()`. The idle loop uses `pause`, not `hlt`;
+  `hlt` without a wake-up interrupt would hang the machine. Replace the polling
+  loop when IRQ 1 is wired up.
+- **Scancode set 1 is assumed.** That is what the 8042 translation mode produces
+  on the target machines. If translation is disabled later, the key tables in
+  `src/keyboard.c` must change.
+- **The manners gate is a debt, not an alternating turn.** `apology_due` is set
+  by every error and cleared only by a successful command. `sorry` with no debt
+  is itself an error. Do not replace this with a two-state please/sorry toggle;
+  that changes the intended behaviour.
+- **Compound detection runs before tokenising.** The raw line is scanned for
+  `; & | < > ( )` and backticks, so redirection or chaining cannot hide inside a
+  token. Adding a quoting layer later means revisiting that scan.
+- **Input limits are fixed and visible.** The line buffer is 64 bytes including
+  the terminator, and the parser accepts at most 8 whitespace-separated tokens.
+  Excess characters are dropped; excess tokens are an error rather than being
+  ignored.
+- **`clear` does not reset shell state.** It only clears the framebuffer. The
+  apology debt, and therefore the need for `sorry` or `please`, survives.
+- **`shell_run()` never returns.** Panic-injection code for testing must be
+  placed before the `keyboard_init(); shell_run();` pair at the end of
+  `kernel_main()`, or it will never execute.
 
 ---
 
 *Milestone 1: the screen is the right colour, the CPU is the right width, and
-the machine stops when asked. Milestone 2: when it stops, it now explains why.*
+the machine stops when asked. Milestone 2: when it stops, it now explains why —
+and if you want to do anything else, you had better ask nicely.*

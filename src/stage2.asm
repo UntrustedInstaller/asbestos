@@ -1,5 +1,5 @@
 ; =====================================================================
-;  asbestOS 32-bit - Stage 2 loader
+;  asbestOS - Stage 2 loader
 ; =====================================================================
 ; Stage 2 runs in 16-bit real mode because both BIOS disk calls and VBE
 ; mode selection require it. It:

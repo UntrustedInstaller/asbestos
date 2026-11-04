@@ -144,7 +144,7 @@ static void draw_screen(const char *reason, const struct trap_frame *frame) {
     console_putc('\n');
 
     console_putc('\n');
-    console_puts("asbestOS has stopped. It is not sorry.\n");
+    console_puts("asbestOS has stopped. It is not sorry. You on the other hand, should be.\n");
     console_putc('\n');
     console_puts("Please reboot the machine.\n");
 }

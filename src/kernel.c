@@ -1,9 +1,10 @@
 #include "boot_info.h"
 #include "console.h"
 #include "idt.h"
-#include "io.h"
+#include "keyboard.h"
 #include "panic.h"
 #include "serial.h"
+#include "shell.h"
 
 static void fail(const char *message) {
     panic(message, 0);
@@ -69,18 +70,8 @@ void kernel_main(void) {
     console_put_dec(bi->blue_size);
     console_puts("@");
     console_put_dec(bi->blue_pos);
-    console_puts("\n\n");
+    console_puts("\n");
 
-    console_puts("ABCDEFGHIJKLMNOPQRSTUVWXYZ\n");
-    console_puts("abcdefghijklmnopqrstuvwxyz\n");
-    console_puts("0123456789 !\"#$%&'()*+,-./:;<=>?@[\\]^_`{|}~\n\n");
-
-    console_puts("If you can read this, the kernel is running.\n");
-    console_puts("Halting.\n");
-
-    serial_puts("Halting in kernel_main\n");
-
-    for (;;) {
-        cpu_halt();
-    }
+    keyboard_init();
+    shell_run();
 }

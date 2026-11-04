@@ -1,7 +1,8 @@
 # Building asbestOS
 
-This tree builds the 32-bit milestone-1 image: protected mode plus a VBE
-framebuffer console. See [32BIT.md](32BIT.md) for the architecture.
+This tree builds the 32-bit image: protected mode, a VBE framebuffer console, a
+polled PS/2 keyboard, and the first iteration of `brash`. See
+[32BIT.md](32BIT.md) for the architecture.
 
 ## Prerequisites
 
@@ -29,8 +30,8 @@ The script:
 1. Assembles `src/boot.asm` into a 512-byte boot sector.
 2. Assembles `src/stage2.asm`, checks that it fits in 8 sectors, and pads it.
 3. Assembles `src/entry32.asm`.
-4. Compiles `src/kernel.c`, `console.c`, `string.c`, and `serial.c` with
-   `-m32 -march=i386`.
+4. Compiles `src/kernel.c`, `console.c`, `string.c`, `serial.c`, `idt.c`,
+   `panic.c`, `keyboard.c`, and `shell.c` with `-m32 -march=i386`.
 5. Links with `src/linker32.ld` at `0x00100000` and produces a flat binary.
 6. Prefixes the binary with a little-endian `uint32_t` byte count and pads the
    kernel region to 128 KiB.
@@ -106,8 +107,10 @@ Expected serial output:
 
 ```
 asbestOS kernel entered
-Halting in kernel_main
 ```
+
+The log stays quiet until you type at the shell. Each entered line is mirrored
+as `brash: <line>`, and `halt` also prints `brash: halted by user`.
 
 ## Headless verification
 
@@ -140,10 +143,72 @@ A correct screenshot has exactly two colours:
 
 There is no third colour because glyphs are not anti-aliased.
 
+### Driving the shell headlessly
+
+The QEMU monitor can inject key presses, so the shell can be exercised without a
+display. Start QEMU as above, then define a helper that sends one key at a time:
+
+```bash
+type_keys() {
+    for key in "$@"; do
+        printf 'sendkey %s\n' "$key" | socat - UNIX-CONNECT:/tmp/qemu-mon
+        sleep 0.1
+    done
+}
+```
+
+Key names come from QEMU, not ASCII. Useful ones:
+
+| Key | Monitor name |
+|-----|--------------|
+| space | `spc` |
+| Enter | `ret` |
+| Backspace | `backspace` |
+| `;` | `semicolon` |
+| shifted `h` | `shift-h` |
+
+Type a command one key at a time:
+
+```bash
+type_keys p l e a s e spc h e l p ret
+sleep 0.5
+printf 'screendump /tmp/shell.ppm\n' | socat - UNIX-CONNECT:/tmp/qemu-mon
+```
+
+The serial log should gain `brash: please help`, and the screenshot should show
+the command list at `usr@brash>`. To verify the manners gate:
+
+```bash
+type_keys h e l p ret                       # wrong word, sets apology debt
+type_keys s o r r y spc h e l p ret         # apology accepted, debt cleared
+```
+
+The first line should produce `That is not the magic word. Say "please".` and
+the second should run `help`.
+
 ## Testing the panic screen
 
-The exception path can be exercised without a debugger. Temporarily add a fault
-to the end of `kernel_main()` in `src/kernel.c`:
+The shell has a built-in `panic` command that deliberately divides by zero:
+
+```text
+usr@brash> please panic
+```
+
+If an earlier command failed, the usual manners rule applies: use
+`sorry panic` instead. The command logs `brash: panic requested`, raises a real
+`#DE`, and enters the normal panic screen. Serial should report:
+
+```
+KERNEL PANIC: Divide Error (#DE)
+  vector=0x00000000 error=0x00000000 eip=... cs=0x00000008 eflags=... cr2=...
+```
+
+and the screenshot should show the `PANIC` banner, the `[ cut here ]` rule, and
+the register dump.
+
+For a fault that happens before the shell starts, or to test a different vector,
+temporarily add code just before `keyboard_init(); shell_run();` at the end of
+`kernel_main()` in `src/kernel.c`:
 
 ```c
 /* TEMPORARY: divide by zero to force #DE. */
@@ -154,16 +219,10 @@ __asm__ __volatile__("xor %%edx, %%edx\n\t"
                      : : : "eax", "ecx", "edx");
 ```
 
-Build and run headless as above. Serial should report:
+It must go before `shell_run()`, because `shell_run()` never returns. Build and
+run headless as above.
 
-```
-KERNEL PANIC: Divide Error (#DE)
-  vector=0x00000000 error=0x00000000 eip=... cs=0x00000008 eflags=... cr2=...
-```
-
-and the screenshot should show the `PANIC` banner, the `[ cut here ]` rule, and
-the register dump. To test the error-code path instead, load an invalid data
-selector:
+To test the error-code path instead, load an invalid data selector:
 
 ```c
 __asm__ __volatile__("mov $0x20, %%ax\n\t"
@@ -172,8 +231,8 @@ __asm__ __volatile__("mov $0x20, %%ax\n\t"
 ```
 
 That raises `#GP` and the report should show `error=0x00000020`. **Remove the
-injection afterwards** and confirm normal boot still prints the banner and
-`Halting in kernel_main`.
+injection afterwards** and confirm normal boot returns to the banner and the
+`usr@brash>` prompt.
 
 ## Troubleshooting
 
@@ -194,6 +253,23 @@ support.
 `-serial file:...`) is present and that QEMU is actually booting the disk. A
 firmware rejected by stage 2 will fall back to BIOS text mode instead of
 reaching the kernel.
+
+**Serial stops after `asbestOS kernel entered`.** That is normal. The shell is
+waiting at `usr@brash>` and only logs a line once it is entered. If the screen
+shows the prompt, the machine is fine.
+
+**Typing does nothing at `usr@brash>`.** Click the QEMU window to give it focus.
+With `-display none`, drive the guest through the monitor's `sendkey` command as
+shown above. Also make sure the keyboard is a PS/2 device; the driver does not
+speak USB HID.
+
+**Injected keys produce the wrong characters.** QEMU key names are not ASCII:
+use `spc` for space, `ret` for Enter, `semicolon` for `;`, and `shift-h` for a
+capital `H`. Characters that need Shift must be sent with the `shift-` prefix.
+
+**Every command now demands `sorry`.** An earlier line was an error, so the
+shell owes an apology. Enter `sorry <command>` once; a successful command clears
+the debt and `please` works again. A blank line does not clear it.
 
 **The machine reboots in a loop instead of showing a panic.** That is usually a
 triple fault before the IDT is installed. Check that `idt_init()` runs before

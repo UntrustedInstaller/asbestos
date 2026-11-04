@@ -29,6 +29,10 @@ static inline void cpu_sti(void) {
     __asm__ __volatile__("sti");
 }
 
+static inline void cpu_pause(void) {
+    __asm__ __volatile__("pause");
+}
+
 static inline uint32_t read_cr0(void) {
     uint32_t value;
     __asm__ __volatile__("mov %%cr0, %0" : "=r"(value));

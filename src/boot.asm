@@ -1,5 +1,5 @@
 ; =====================================================================
-;  asbestOS 32-bit - Stage 1 boot sector
+;  asbestOS - boot sector
 ; =====================================================================
 ; The BIOS enters here in 16-bit real mode. This sector does one job:
 ; load Stage 2 from LBA 1 into 0x0800:0x0000 and jump to it.
