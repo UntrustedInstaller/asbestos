@@ -2,7 +2,7 @@
 
 An intentionally abrasive operating system inspired by INTERCAL.
 
-## Current state: milestone 1
+## Current state: milestone 1, milestone 2 underway
 
 The kernel boots, enters ring 0 with flat segments and no paging, selects a
 32-bpp VBE mode, and draws an 80×25 text console in exact 24-bit colour:
@@ -12,6 +12,10 @@ The kernel boots, enters ring 0 with flat segments and no paging, selects a
 
 That is the whole of milestone 1. There is no keyboard, disk driver, filesystem,
 or shell yet. It prints its diagnostics and halts.
+
+Milestone 2 has started with an IDT and a panic screen: any CPU exception now
+stops the machine with a readable oops-style report instead of a triple-fault
+reboot. Hardware interrupts are still masked.
 
 ## Quick start
 
@@ -44,6 +48,8 @@ and `socat` for the headless screenshot check.
 - **Exact colours** — `#4B2222` background, `#C39393` foreground, no palette
   approximation
 - **Serial diagnostics** — COM1 output for headless boot verification
+- **IDT and panic screen** — 256 exception stubs, a C dispatcher, and an
+  oops-style report with a `PANIC` banner and register dump
 - **JetBrains Mono bitmap font** — 8×16 glyphs for ASCII `0x20`–`0x7F`,
   rasterised from JetBrains Mono at 13 px and licensed under the SIL OFL 1.1
 
@@ -64,11 +70,14 @@ and `socat` for the headless screenshot check.
 │   ├── serial.h
 │   ├── string.c        — Freestanding memory/string helpers
 │   ├── string.h
-│   ├── io.h            — Port I/O and CPU helpers
+│   ├── io.h            — Port I/O, CPU helpers, control-register reads
 │   ├── types32.h       — Fixed-width types
+│   ├── idt.c           — IDT setup, exception names, C dispatcher
+│   ├── idt.h           — IDT API and trap-frame layout
+│   ├── isr.asm         — 256 exception stubs and isr_common
+│   ├── panic.c         — Panic screen and serial fault report
+│   ├── panic.h
 │   └── linker32.ld     — Links the kernel at 1 MiB
-├── tools/
-│   └── make-font.py    — Regenerates font8x16.h from a TrueType font
 ├── docs/
 │   ├── 32BIT.md        — Architecture, boot path, console internals
 │   └── BUILD.md        — Build, run, and headless test instructions
@@ -81,13 +90,14 @@ and `socat` for the headless screenshot check.
 ## Documentation
 
 - **[docs/32BIT.md](docs/32BIT.md)** — memory and disk layout, boot sequence,
-  VBE mode selection, BootInfo, console rendering, limitations, and the
-  milestone-2 plan
-- **[docs/BUILD.md](docs/BUILD.md)** — build, run, and verify the image
+  VBE mode selection, BootInfo, console rendering, IDT and panic path,
+  limitations, and the milestone-2 plan
+- **[docs/BUILD.md](docs/BUILD.md)** — build, run, verify the image, and test the
+  exception path
 
 ## Roadmap
 
-1. IDT and exception handling
+1. ~~IDT and exception handling~~ — done
 2. PIC remap and PIT
 3. PS/2 keyboard driver
 4. ATA PIO driver

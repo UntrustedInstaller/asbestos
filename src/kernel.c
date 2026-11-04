@@ -1,20 +1,18 @@
 #include "boot_info.h"
 #include "console.h"
+#include "idt.h"
 #include "io.h"
+#include "panic.h"
 #include "serial.h"
 
 static void fail(const char *message) {
-    serial_puts("asbestOS: ");
-    serial_puts(message);
-    serial_puts("\n");
-
-    for (;;) {
-        cpu_halt();
-    }
+    panic(message, 0);
 }
 
 void kernel_main(void) {
     serial_init();
+    idt_init();
+
     serial_puts("asbestOS kernel entered\n");
 
     const struct BootInfo *bi =

@@ -49,12 +49,15 @@ truncate -s "$STAGE2_MAX" "$OUT/stage2.bin"
 echo "[*] Assembling kernel entry (src/entry32.asm)..."
 nasm -f elf32 src/entry32.asm -o "$OUT/entry32.o"
 
+echo "[*] Assembling interrupt stubs (src/isr.asm)..."
+nasm -f elf32 src/isr.asm -o "$OUT/isr.o"
+
 CFLAGS="-m32 -march=i386 -mtune=i386 -ffreestanding -fno-builtin \
         -fno-pic -fno-pie -fno-stack-protector \
         -fno-asynchronous-unwind-tables -fno-unwind-tables \
         -nostdlib -O2 -Wall -Wextra -Isrc"
 
-for src in kernel console string serial; do
+for src in kernel console string serial idt panic; do
     echo "[*] Compiling src/${src}.c..."
     # shellcheck disable=SC2086
     gcc $CFLAGS -c "src/${src}.c" -o "$OUT/${src}.o"
@@ -63,10 +66,13 @@ done
 echo "[*] Linking kernel..."
 ld -m elf_i386 -T src/linker32.ld \
     "$OUT/entry32.o" \
+    "$OUT/isr.o" \
     "$OUT/kernel.o" \
     "$OUT/console.o" \
     "$OUT/string.o" \
     "$OUT/serial.o" \
+    "$OUT/idt.o" \
+    "$OUT/panic.o" \
     -o "$OUT/kernel.elf"
 
 objcopy -O binary -j .text -j .rodata -j .data "$OUT/kernel.elf" "$OUT/kernel.bin"

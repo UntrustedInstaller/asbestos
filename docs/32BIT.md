@@ -1,7 +1,8 @@
-# asbestOS 32-bit — Milestone 1
+# asbestOS 32-bit — Milestone 1 and the start of Milestone 2
 
 > **Status:** working draft. Milestone 1 boots, renders, and halts correctly
-> under QEMU. This document describes the entire current tree in `src/`.
+> under QEMU. Milestone 2 has started with the IDT and panic screen. This
+> document describes the entire current tree in `src/`.
 
 Milestone 1 is deliberately narrow: leave the BIOS behind, enter flat 32-bit
 protected mode, put the machine into a VBE linear-framebuffer mode, and draw an
@@ -22,7 +23,7 @@ enters protected mode, every instruction executed is 32-bit.
 | Privilege level | Ring 0                                               |
 | Segmentation    | Flat: code `0x08`, data `0x10`, base 0, limit 4 GiB  |
 | Paging          | Off                                                  |
-| Interrupts      | Disabled after protected-mode entry                  |
+| Interrupts      | IDT installed; exceptions caught, hardware IRQs masked |
 | Kernel location | Linked and run at `0x00100000` (1 MiB)               |
 | Kernel stack    | Top at `0x00090000`, grows down                      |
 | Firmware        | BIOS (no UEFI)                                       |
@@ -49,7 +50,7 @@ src/
 ├── boot.asm        Stage 1 boot sector (16-bit, BIOS LBA read)
 ├── stage2.asm      Stage 2 loader (16-bit: disk, VBE, A20, GDT, PM entry)
 ├── entry32.asm     32-bit kernel entry: segments, stack, BSS, call C
-├── kernel.c        Milestone-1 kernel: validate BootInfo, print, halt
+├── kernel.c        Kernel entry: validate BootInfo, initialise, print, halt
 ├── console.c       VBE framebuffer 80×25 text console
 ├── console.h
 ├── boot_info.h     BootInfo struct shared with stage2.asm
@@ -58,8 +59,13 @@ src/
 ├── serial.h
 ├── string.c        memset/memcpy/memmove/strlen/strcmp
 ├── string.h
-├── io.h            Port I/O and CPU helpers
+├── io.h            Port I/O, CPU helpers, control-register reads
 ├── types32.h       Fixed-width types (freestanding, no libc)
+├── idt.c           IDT setup, exception names, C dispatcher
+├── idt.h           IDT API and struct trap_frame
+├── isr.asm         256 generated exception stubs, isr_common
+├── panic.c         Panic screen and serial fault report
+├── panic.h
 └── linker32.ld     Links the kernel at 0x00100000
 ```
 
@@ -244,23 +250,21 @@ to nine pixels wide, while at 12 px the glyphs get noticeably smaller than the
 cell. Rendering at the cell size directly (rather than at a large size and
 downscaling) keeps every stem on a whole pixel and every glyph inside its cell.
 
-The table is generated, not hand-edited:
+The table is generated, not hand-edited. The generator script is deliberately
+not part of this tree; the checked-in header was produced with a small
+Pillow-based rasteriser from JetBrains Mono Regular at 13 px with the baseline
+on row 12, one byte per scanline, most-significant bit on the left, for ASCII
+`0x20`–`0x7F`.
 
-```bash
-python3 tools/make-font.py \
-    --font /path/to/JetBrainsMono-Regular.ttf \
-    --out  src/font8x16.h
-```
+The header is checked in, so a normal build needs neither Pillow nor the
+TrueType file. JetBrains Mono is licensed under the SIL Open Font License 1.1
+and the bitmap is a derivative of it; the licence text is in
+`LICENSES/JetBrainsMono-OFL.txt`. Do not replace the header with a font that has
+no compatible licence.
 
-The script needs Pillow. The generated header is checked in, so a normal build
-does not need Pillow or the TrueType file. JetBrains Mono is licensed under the
-SIL Open Font License 1.1 and the bitmap is a derivative of it; the licence text
-is in `LICENSES/JetBrainsMono-OFL.txt`. Do not replace the header with a font
-that has no compatible licence.
-
-To swap in another monospace face, point `--font` at it. Keep the cell size,
-baseline, and rasterisation in `tools/make-font.py` and re-run the boot checks:
-the glyph shapes change but the `font8x16[96][16]` interface does not.
+To swap in another monospace face, rasterise it with the same cell size,
+baseline, bit order, and table layout, then re-run the boot checks: the glyph
+shapes change but the `font8x16[96][16]` interface does not.
 
 Characters outside `0x20`–`0x7E` render as `?`. Control characters are handled
 by the console itself:
@@ -309,7 +313,111 @@ milestone can replace it with a framebuffer blit.
 
 ---
 
-## 8. Build and run
+## 8. Interrupts, exceptions, and the panic screen
+
+The IDT is installed early in `kernel_main()`, before the console exists. That
+ordering matters: a fault during BootInfo validation should produce a panic
+report, not a triple-fault reboot with no useful output.
+
+### IDT
+
+`src/idt.c` fills all 256 gates with ring-0, present, 32-bit interrupt gates
+(`0x8E`) that point at stubs in `src/isr.asm`. All gates use the flat code
+selector `0x08`. The table is loaded with `lidt`:
+
+```c
+idtp.limit = sizeof(idt) - 1;
+idtp.base  = &idt[0];
+asm volatile("lidt %0" : : "m"(idtp));
+```
+
+Hardware IRQs remain masked (`eflags.IF == 0`), so the timer, keyboard, and
+other devices cannot fire yet. Vector `0x80` is not special-cased either.
+
+### Stubs and the trap frame
+
+The CPU pushes `eip`, `cs`, and `eflags` on an exception. For some vectors it
+also pushes an error code; for the rest it does not. The stubs normalise this:
+
+| Vectors with a CPU error code | Vectors without |
+|-------------------------------|-----------------|
+| 8, 10, 11, 12, 13, 14, 17, 21, 29, 30 | all others |
+
+Every stub pushes the vector number, and the "without" case pushes a dummy zero
+error code first. That keeps one uniform stack layout. `isr_common` then clears
+the direction flag, saves the general registers with `pushad`, loads the flat
+data selector into `ds`/`es`/`fs`/`gs`, and calls `isr_dispatch(frame)`.
+
+`struct trap_frame` in `src/idt.h` describes exactly what the C handler sees:
+
+```c
+struct trap_frame {
+    uint32_t edi, esi, ebp, esp, ebx, edx, ecx, eax; /* pushad */
+    uint32_t vector, error;                          /* stub   */
+    uint32_t eip, cs, eflags;                        /* CPU    */
+};
+```
+
+If a handler ever returns, `isr_common` restores the registers, drops the vector
+and error code, and executes `iretd`. For exceptions the dispatcher never
+returns: it calls `panic()`.
+
+### Dispatcher
+
+`isr_dispatch()` maps vectors `0`–`31` to human-readable names (`Divide Error
+(#DE)`, `General Protection Fault (#GP)`, and so on). Anything outside the
+architectural exceptions is treated as `"Unexpected interrupt"`. There is no
+recovery path and no attempt to continue after a fault; continuing after a
+corrupted state is how you get mystery bugs.
+
+### Panic path
+
+`panic()` is written to survive being called at almost any point:
+
+1. `cli`, then check a recursion guard. A fault inside the panic path halts
+   instead of panicking again.
+2. Write a compact report to COM1. Serial output is best-effort and is skipped
+   if `serial_init()` has not run yet, so an early panic cannot hang waiting for
+   a UART that was never configured.
+3. If the framebuffer console is ready, clear it and draw the panic screen.
+4. Halt forever.
+
+The screen is a Linux-oops-style report: a centred rule, a FIGlet `PANIC`
+banner, a `[ cut here ]` rule, the exception name, vector and error code, the
+instruction pointer and segment state, general registers, control registers,
+and a closing line. Serial carries the same core facts for headless runs:
+
+```
+KERNEL PANIC: Divide Error (#DE)
+  vector=0x00000000 error=0x00000000 eip=0x00100D1A cs=0x00000008 eflags=0x00010046 cr2=0x00000000
+```
+
+The screen is laid out to fit exactly 25 rows:
+
+| Row | Content |
+|-----|---------|
+| 0 | blank |
+| 1 | `[ KERNEL PANIC ]` rule |
+| 3–7 | `PANIC` banner |
+| 9 | `[ cut here ]` rule |
+| 11 | exception name |
+| 12 | vector and error code |
+| 14 | `eip`, `cs`, `eflags` |
+| 16–17 | general registers |
+| 19 | control registers |
+| 21 | closing line |
+| 23 | reboot request |
+| 24 | cursor |
+
+Two details keep it from scrolling: the rules are **79** columns wide, because
+an exactly 80-column line makes `console_putc` wrap and then the trailing
+newline pushes the screen past 25 rows; and each banner row is centred against
+a fixed width of 28, with its trailing spaces preserved, so the glyph columns
+line up.
+
+---
+
+## 9. Build and run
 
 See [BUILD.md](BUILD.md) for the full instructions. In short:
 
@@ -341,11 +449,12 @@ A correct screenshot contains only two colours: `#4B2222` and `#C39393`.
 
 ---
 
-## 9. Current limitations
+## 10. Current limitations
 
 Milestone 1 intentionally lacks:
 
-- **Interrupts** — no IDT, no PIC remap, no clock, no keyboard.
+- **Hardware interrupts** — the IDT and exception path exist, but the PIC is
+  not remapped and no IRQ fires.
 - **Input** — the console is output-only.
 - **Storage** — no ATA PIO driver and no FAT16/FAT32 layer yet.
 - **Shell** — no command loop, no manners gate, no user commands.
@@ -361,12 +470,13 @@ and a firmware that leaves A20 controllable through port `0x92`.
 
 ---
 
-## 10. Milestone 2 and beyond
+## 11. Milestone 2 and beyond
 
-The intended order is:
+Milestone 2 is in progress. The IDT and panic screen are done; the intended
+order for the rest is:
 
-1. **IDT and exception handling.** Catch faults with a readable panic screen
-   instead of a triple-fault reboot.
+1. ~~**IDT and exception handling.**~~ Done: faults now produce a readable panic
+   screen instead of a triple-fault reboot.
 2. **PIC remap and PIT.** A timer tick is the foundation for input timeouts and
    later scheduling.
 3. **PS/2 keyboard driver.** Scan-code set 1, shifted characters, arrows,
@@ -384,7 +494,7 @@ regressions are obvious.
 
 ---
 
-## 11. Design notes and gotchas
+## 12. Design notes and gotchas
 
 A few decisions are worth recording because they are easy to undo by accident.
 
@@ -407,8 +517,16 @@ A few decisions are worth recording because they are easy to undo by accident.
 - **The linker script uses separate RX and RW load segments.** This removes the
   RWX warning from `ld` and keeps the eventual page permissions honest, even
   though paging is currently off.
+- **Every stub must push a vector and an error code.** `isr_common` assumes the
+  stack shape in `struct trap_frame`. If you add or renumber a vector that
+  carries an error code, update the `%if` list in `src/isr.asm`; otherwise the
+  handler will read `eip` as the error code and the frame will be wrong.
+- **`console_putc` wraps at 80 columns.** A line of exactly 80 characters
+  consumes two rows if it is followed by `\n`. The panic rules are 79 columns
+  for that reason. Keep the panic screen at or below 24 printed rows so the
+  final newline does not scroll the banner away.
 
 ---
 
 *Milestone 1: the screen is the right colour, the CPU is the right width, and
-the machine stops when asked. That is enough to build on.*
+the machine stops when asked. Milestone 2: when it stops, it now explains why.*

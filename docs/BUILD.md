@@ -66,17 +66,15 @@ build fails with the actual size and the constant to increase.
 ### Regenerating the font
 
 `src/font8x16.h` is generated from JetBrains Mono and checked in, so the normal
-build has no font dependencies. To change it:
+build has no font dependencies.
 
-```bash
-curl -LO https://raw.githubusercontent.com/JetBrains/JetBrainsMono/master/fonts/ttf/JetBrainsMono-Regular.ttf
-python3 tools/make-font.py --font JetBrainsMono-Regular.ttf --out src/font8x16.h
-```
-
-This needs Pillow (`pip install pillow`). The script rasterises ASCII
-`0x20`–`0x7F` at 13 px with the baseline on row 12, the largest size where every
-JetBrains Mono glyph fits an 8×16 cell. Rebuild and re-run the screenshot check
-afterwards: the glyphs change, the two-colour histogram must not.
+The generator script is not included in this tree. To change the font, rasterise
+ASCII `0x20`–`0x7F` at 13 px with the baseline on row 12 — the largest size where
+every JetBrains Mono glyph fits an 8×16 cell — into 96 glyphs of 16 bytes each,
+one byte per scanline with the most-significant bit on the left. Pillow is a
+convenient way to do it, but nothing in the build depends on Pillow. Rebuild and
+re-run the screenshot check afterwards: the glyphs change, the two-colour
+histogram must not.
 
 The bitmap is a derivative of JetBrains Mono and stays under the SIL OFL 1.1.
 Keep `LICENSES/JetBrainsMono-OFL.txt` with the tree if you redistribute it.
@@ -142,6 +140,41 @@ A correct screenshot has exactly two colours:
 
 There is no third colour because glyphs are not anti-aliased.
 
+## Testing the panic screen
+
+The exception path can be exercised without a debugger. Temporarily add a fault
+to the end of `kernel_main()` in `src/kernel.c`:
+
+```c
+/* TEMPORARY: divide by zero to force #DE. */
+__asm__ __volatile__("xor %%edx, %%edx\n\t"
+                     "xor %%ecx, %%ecx\n\t"
+                     "mov $1, %%eax\n\t"
+                     "div %%ecx\n\t"
+                     : : : "eax", "ecx", "edx");
+```
+
+Build and run headless as above. Serial should report:
+
+```
+KERNEL PANIC: Divide Error (#DE)
+  vector=0x00000000 error=0x00000000 eip=... cs=0x00000008 eflags=... cr2=...
+```
+
+and the screenshot should show the `PANIC` banner, the `[ cut here ]` rule, and
+the register dump. To test the error-code path instead, load an invalid data
+selector:
+
+```c
+__asm__ __volatile__("mov $0x20, %%ax\n\t"
+                     "mov %%ax, %%ds\n\t"
+                     : : : "eax", "memory");
+```
+
+That raises `#GP` and the report should show `error=0x00000020`. **Remove the
+injection afterwards** and confirm normal boot still prints the banner and
+`Halting in kernel_main`.
+
 ## Troubleshooting
 
 **The build says stage 2 is too big.** Raise `STAGE2_SECTORS` in `src/boot.asm`
@@ -161,3 +194,12 @@ support.
 `-serial file:...`) is present and that QEMU is actually booting the disk. A
 firmware rejected by stage 2 will fall back to BIOS text mode instead of
 reaching the kernel.
+
+**The machine reboots in a loop instead of showing a panic.** That is usually a
+triple fault before the IDT is installed. Check that `idt_init()` runs before
+anything that can fault, and that the stubs push both a vector and an error code
+in the order `struct trap_frame` expects.
+
+**A panic screen is one line too tall and the banner scrolls off.** A line of
+exactly 80 columns wraps and then the trailing newline consumes another row.
+Keep panic rules at 79 columns and the whole screen at 24 printed rows.

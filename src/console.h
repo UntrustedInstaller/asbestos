@@ -12,6 +12,7 @@
 #define CONSOLE_DEFAULT_FG 0xC39393u
 
 void console_init(const struct BootInfo *bi);
+int console_is_ready(void);
 void console_clear(void);
 void console_gotoxy(uint32_t col, uint32_t row);
 void console_set_color(uint32_t fg_rgb, uint32_t bg_rgb);

@@ -28,6 +28,7 @@ static uint32_t bg_pixel;
 
 static uint32_t cursor_x;
 static uint32_t cursor_y;
+static int console_active;
 
 static char cells[CONSOLE_ROWS][CONSOLE_COLS];
 
@@ -163,6 +164,11 @@ void console_init(const struct BootInfo *bi) {
     bg_pixel = rgb_to_pixel(CONSOLE_DEFAULT_BG);
 
     console_clear();
+    console_active = 1;
+}
+
+int console_is_ready(void) {
+    return console_active;
 }
 
 void console_clear(void) {
