@@ -1,6 +1,9 @@
 #include "idt.h"
 #include "io.h"
+#include "keyboard.h"
 #include "panic.h"
+#include "pic.h"
+#include "pit.h"
 #include "string.h"
 
 #define IDT_ENTRIES 256u
@@ -82,6 +85,17 @@ static const char *exception_name(uint32_t vector) {
 void isr_dispatch(struct trap_frame *frame) {
     if (frame->vector < 32u) {
         panic(exception_name(frame->vector), frame);
+    }
+
+    if (frame->vector < 48u) {
+        uint8_t irq = (uint8_t)(frame->vector - 32u);
+
+        if (irq == IRQ_KEYBOARD) {
+            keyboard_irq_handler();
+        } else {
+            pic_eoi(irq);
+        }
+        return;
     }
 
     panic("Unexpected interrupt", frame);

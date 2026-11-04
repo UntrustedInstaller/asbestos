@@ -105,12 +105,8 @@ static void read_line(char *buffer, usize capacity) {
     usize length = 0;
 
     for (;;) {
-        char c = keyboard_poll();
-
-        if (!c) {
-            cpu_pause();
-            continue;
-        }
+        /* Blocks until a key is available (IRQ-driven). */
+        char c = keyboard_read_char();
 
         if (c == '\n') {
             console_putc('\n');

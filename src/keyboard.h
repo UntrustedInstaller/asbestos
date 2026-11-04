@@ -4,16 +4,31 @@
 #include "types32.h"
 
 /*
- * Minimal polled PS/2 keyboard driver, scancode set 1.
+ * Polled or IRQ-driven PS/2 keyboard, scancode set 1.
  *
- * Returns 0 when no key is ready. Printable keys are returned as ASCII,
- * Backspace as '\b', Enter as '\n', and Tab as '\t'. Key releases, modifiers,
- * and extended keys are consumed internally.
- *
- * This is deliberately polling-only. A later milestone can move it behind
- * IRQ 1 once the PIC is remapped.
+ * Raw scancodes are collected into a small buffer either by polling or by
+ * the IRQ 1 handler. keyboard_poll() translates raw scancodes to ASCII and
+ * returns 0 when nothing is pending. keyboard_read_char() blocks until a
+ * character is available.
  */
-char keyboard_poll(void);
+
+#define KEYBOARD_BUFFER_SIZE 16
+
+struct keyboard_buffer {
+    uint8_t data[KEYBOARD_BUFFER_SIZE];
+    volatile uint32_t head;
+    volatile uint32_t tail;
+    volatile uint32_t count;
+};
+
+extern struct keyboard_buffer keyboard_buf;
+
 void keyboard_init(void);
+int keyboard_scancode_available(void);
+char keyboard_poll(void);
+char keyboard_read_char(void);
+
+/* Called from isr_dispatch() on IRQ 1 (vector 33). */
+void keyboard_irq_handler(void);
 
 #endif

@@ -1,11 +1,10 @@
 #include "keyboard.h"
 #include "io.h"
+#include "pic.h"
 
-#define PS2_STATUS 0x64
 #define PS2_DATA 0x60
 
 #define PS2_STATUS_OUTPUT 0x01
-#define PS2_STATUS_AUX 0x20
 
 #define SC_LSHIFT 0x2A
 #define SC_RSHIFT 0x36
@@ -14,6 +13,8 @@
 #define SC_BACKSPACE 0x0E
 #define SC_TAB 0x0F
 #define SC_EXTENDED 0xE0
+
+struct keyboard_buffer keyboard_buf;
 
 static int shift_down;
 static int caps_lock;
@@ -48,24 +49,64 @@ static const char keymap_upper[128] = {
     [0x35] = '?', [0x39] = ' ',
 };
 
+static uint8_t buffer_pop(void) {
+    uint8_t sc;
+
+    cpu_cli();
+    if (keyboard_buf.count == 0) {
+        cpu_sti();
+        return 0;
+    }
+
+    sc = keyboard_buf.data[keyboard_buf.tail];
+    keyboard_buf.tail = (keyboard_buf.tail + 1u) % KEYBOARD_BUFFER_SIZE;
+    keyboard_buf.count--;
+    cpu_sti();
+
+    return sc;
+}
+
+static void buffer_push(uint8_t sc) {
+    cpu_cli();
+    if (keyboard_buf.count < KEYBOARD_BUFFER_SIZE) {
+        keyboard_buf.data[keyboard_buf.head] = sc;
+        keyboard_buf.head = (keyboard_buf.head + 1u) % KEYBOARD_BUFFER_SIZE;
+        keyboard_buf.count++;
+    }
+    cpu_sti();
+}
+
+void keyboard_irq_handler(void) {
+    uint8_t scancode = inb(PS2_DATA);
+
+    buffer_push(scancode);
+
+    pic_eoi(IRQ_KEYBOARD);
+}
+
 void keyboard_init(void) {
+    keyboard_buf.head = 0;
+    keyboard_buf.tail = 0;
+    keyboard_buf.count = 0;
+
+    shift_down = 0;
+    caps_lock = 0;
+    extended = 0;
+
     /* Drop anything the firmware left in the output buffer. */
-    while (inb(PS2_STATUS) & PS2_STATUS_OUTPUT) {
+    while (inb(0x64) & PS2_STATUS_OUTPUT) {
         (void)inb(PS2_DATA);
     }
 }
 
+int keyboard_scancode_available(void) {
+    return keyboard_buf.count > 0;
+}
+
 char keyboard_poll(void) {
-    uint8_t status = inb(PS2_STATUS);
+    uint8_t scancode = buffer_pop();
 
-    if (!(status & PS2_STATUS_OUTPUT)) {
-        return 0;
-    }
-
-    uint8_t scancode = inb(PS2_DATA);
-
-    if (status & PS2_STATUS_AUX) {
-        /* Mouse byte; not ours. */
+    if (!scancode) {
         return 0;
     }
 
@@ -75,7 +116,6 @@ char keyboard_poll(void) {
     }
 
     if (extended) {
-        /* Arrows, Home/End, and friends are not needed yet. */
         extended = 0;
         return 0;
     }
@@ -118,4 +158,11 @@ char keyboard_poll(void) {
     }
 
     return c;
+}
+
+char keyboard_read_char(void) {
+    while (!keyboard_scancode_available()) {
+        cpu_pause();
+    }
+    return keyboard_poll();
 }
