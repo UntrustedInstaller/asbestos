@@ -1,4 +1,4 @@
-![asbestOS](asbestos.svg)
+<img src="asbestos.svg" alt="asbestOS" width="50%">
 
 # asbestOS
 
