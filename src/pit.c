@@ -35,3 +35,7 @@ void pit_init(uint32_t frequency_hz) {
 uint32_t pit_ticks_get(void) {
     return pit_ticks;
 }
+
+void pit_irq_handler(void) {
+    pit_ticks++;
+}
