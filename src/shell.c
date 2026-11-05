@@ -263,7 +263,7 @@ static void command_help(void) {
     console_puts("  clear          clear the screen\n");
     console_puts("  cd [dir]       change directory\n");
     console_puts("  pwd            print current directory\n");
-    console_puts("  ls [-l] [dir]  list directory contents\n");
+    console_puts("  ls [-l] [-a] [dir]  list directory contents\n");
     console_puts("  cat <file>...  display file contents\n");
     console_puts("  halt           stop the machine\n");
     console_puts("  panic          force a CPU fault\n");
@@ -341,12 +341,15 @@ static void command_pwd(void) {
 
 static int command_ls(int argc, char *argv[]) {
     int long_format = 0;
+    int show_all = 0;
     const char *given = "";
     char path[SHELL_PATH_MAX];
 
     for (int i = 2; i < argc; i++) {
         if (strcmp(argv[i], "-l") == 0) {
             long_format = 1;
+        } else if (strcmp(argv[i], "-a") == 0) {
+            show_all = 1;
         } else {
             given = argv[i];
         }
@@ -370,6 +373,16 @@ static int command_ls(int argc, char *argv[]) {
         console_puts(given[0] ? given : ".");
         console_puts(": No such directory\n");
         return -1;
+    }
+
+    if (show_all) {
+        if (long_format) {
+            console_puts("        <DIR> .\n");
+            console_puts("        <DIR> ..\n");
+        } else {
+            console_puts(".  <DIR>\n");
+            console_puts("..  <DIR>\n");
+        }
     }
 
     return fat_list_dir(path, long_format) == 0 ? 0 : -1;
