@@ -9,6 +9,7 @@
 #include "serial.h"
 #include "shell.h"
 #include "ata_pio.h"
+#include "fat.h"
 
 static void fail(const char *message) {
     panic(message, 0);
@@ -58,9 +59,9 @@ void kernel_main(void) {
     {
         uint16_t identify_buf[ATA_SECTOR_WORDS];
 
-        if (ata_probe(ATA_DATA, 0)) {
+        if (ata_probe(0)) {
             serial_puts("ata: master drive present\n");
-            if (ata_identify(ATA_DATA, 0, identify_buf) == 0) {
+            if (ata_identify(0, identify_buf) == 0) {
                 serial_puts("ata: identify ok\n");
             } else {
                 serial_puts("ata: identify failed\n");
@@ -68,6 +69,35 @@ void kernel_main(void) {
         } else {
             serial_puts("ata: no master drive\n");
         }
+    }
+
+    /* Initialize FAT filesystem on the ATA disk. */
+    fat_set_boot_sector(274);
+    if (fat_init() == 0) {
+        serial_puts("fat: ready\n");
+
+        /* Test: open and read a file from FAT */
+        {
+            char buf[64];
+            if (fat_open("HELLO.TXT") == 0) {
+                serial_puts("fat: opened HELLO.TXT\n");
+                serial_puts("fat: size=");
+                serial_put_dec((uint32_t)fat_size());
+                serial_puts("\n");
+                int32_t n = fat_read(buf, sizeof(buf) - 1);
+                if (n > 0) {
+                    buf[n] = '\0';
+                    serial_puts("fat: content='");
+                    serial_puts(buf);
+                    serial_puts("'\n");
+                }
+                fat_close();
+            } else {
+                serial_puts("fat: failed to open HELLO.TXT\n");
+            }
+        }
+    } else {
+        serial_puts("fat: init failed\n");
     }
 
     shell_run();
