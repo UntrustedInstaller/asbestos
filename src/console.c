@@ -30,6 +30,12 @@ static uint32_t cursor_x;
 static uint32_t cursor_y;
 static int console_active;
 
+/* Cursor blink state. The PIT ticks at 100 Hz, so 50 ticks = 500 ms. */
+#define CONSOLE_BLINK_TICKS 50u
+static int cursor_visible = 1;
+static uint32_t blink_ticks;
+static volatile int console_busy;
+
 static char cells[CONSOLE_ROWS][CONSOLE_COLS];
 
 static uint32_t scale_channel(uint32_t value, uint8_t size) {
@@ -125,6 +131,29 @@ static void erase_cursor(void) {
     draw_cell(cursor_x, cursor_y);
 }
 
+/*
+ * Called from the timer IRQ once per PIT tick. Toggles the software cursor
+ * roughly every 500 ms, assuming the PIT runs at 100 Hz.
+ */
+void console_tick(void) {
+    if (!console_active || console_busy) {
+        return;
+    }
+
+    if (++blink_ticks < CONSOLE_BLINK_TICKS) {
+        return;
+    }
+    blink_ticks = 0;
+
+    if (cursor_visible) {
+        draw_cell(cursor_x, cursor_y);
+        cursor_visible = 0;
+    } else {
+        draw_cursor();
+        cursor_visible = 1;
+    }
+}
+
 static void redraw_all(void) {
     for (uint32_t row = 0; row < CONSOLE_ROWS; row++) {
         for (uint32_t col = 0; col < CONSOLE_COLS; col++) {
@@ -172,6 +201,7 @@ int console_is_ready(void) {
 }
 
 void console_clear(void) {
+    console_busy = 1;
     fill_rect(0, 0, screen_width, screen_height, bg_pixel);
 
     for (uint32_t row = 0; row < CONSOLE_ROWS; row++) {
@@ -182,10 +212,14 @@ void console_clear(void) {
 
     cursor_x = 0;
     cursor_y = 0;
+    cursor_visible = 1;
+    blink_ticks = 0;
     draw_cursor();
+    console_busy = 0;
 }
 
 void console_gotoxy(uint32_t col, uint32_t row) {
+    console_busy = 1;
     if (col >= CONSOLE_COLS) {
         col = CONSOLE_COLS - 1;
     }
@@ -196,7 +230,10 @@ void console_gotoxy(uint32_t col, uint32_t row) {
     erase_cursor();
     cursor_x = col;
     cursor_y = row;
+    cursor_visible = 1;
+    blink_ticks = 0;
     draw_cursor();
+    console_busy = 0;
 }
 
 void console_set_color(uint32_t fg_rgb, uint32_t bg_rgb) {
@@ -214,6 +251,7 @@ static void newline(void) {
 }
 
 void console_putc(char c) {
+    console_busy = 1;
     erase_cursor();
 
     switch (c) {
@@ -253,7 +291,10 @@ void console_putc(char c) {
             break;
     }
 
+    cursor_visible = 1;
+    blink_ticks = 0;
     draw_cursor();
+    console_busy = 0;
 }
 
 void console_puts(const char *s) {
