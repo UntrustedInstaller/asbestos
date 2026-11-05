@@ -484,7 +484,7 @@ int fat_is_open(void) {
     return file_open;
 }
 
-void fat_list_dir(const char *path) {
+void fat_list_dir(const char *path, int long_format) {
     char name_11[11];
     int pos = 0;
     uint32_t cur_cluster = 0;
@@ -577,11 +577,32 @@ void fat_list_dir(const char *path) {
             }
             disp[j] = '\0';
 
-            console_puts(disp);
-            if (ent[DIR_ATTR] & ATTR_DIRECTORY) {
-                console_puts("  <DIR>\n");
+            if (long_format) {
+                if (ent[DIR_ATTR] & ATTR_DIRECTORY) {
+                    console_puts("        <DIR> ");
+                } else {
+                    uint32_t sz = read_u32(&ent[DIR_FILE_SIZE]);
+                    uint32_t tmp = sz;
+                    int digits = 1;
+                    while (tmp >= 10) {
+                        tmp /= 10;
+                        digits++;
+                    }
+                    for (int s = digits; s < 12; s++) {
+                        console_putc(' ');
+                    }
+                    console_put_dec(sz);
+                    console_putc(' ');
+                }
+                console_puts(disp);
+                console_putc('\n');
             } else {
-                console_puts("\n");
+                console_puts(disp);
+                if (ent[DIR_ATTR] & ATTR_DIRECTORY) {
+                    console_puts("  <DIR>\n");
+                } else {
+                    console_putc('\n');
+                }
             }
         }
         cluster = fat_next_cluster(cluster);
