@@ -271,6 +271,7 @@ static void command_help(void) {
     console_puts("  head <file> [n]  print first N bytes (default 256)\n");
     console_puts("  tail <file> [n]  print last N bytes (default 256)\n");
     console_puts("  wc <file>        count bytes, words, and lines\n");
+    console_puts("  grep <pat> <file>  search for a pattern in a file\n");
     console_puts("  ls [-l] [-a] [dir]  list directory contents\n");
     console_puts("  cat <file>...  display file contents\n");
     console_puts("  halt           stop the machine\n");
@@ -619,6 +620,97 @@ static int command_wc(int argc, char *argv[]) {
     return 0;
 }
 
+static int command_grep(int argc, char *argv[]) {
+    if (argc < 4) {
+        console_puts("Usage: grep <pat> <file>\n");
+        return -1;
+    }
+
+    const char *pat = argv[2];
+    uint32_t pat_len = 0;
+    for (const char *p = pat; *p; p++) {
+        pat_len++;
+    }
+
+    char path[SHELL_PATH_MAX];
+    if (resolve_path(argv[3], path) != 0) {
+        console_puts("grep: path too long\n");
+        return -1;
+    }
+
+    if (fat_is_dir(path)) {
+        console_puts("grep: ");
+        console_puts(argv[3]);
+        console_puts(": Is a directory\n");
+        return -1;
+    }
+
+    if (fat_open(path) != 0) {
+        console_puts("grep: ");
+        console_puts(argv[3]);
+        console_puts(": No such file or directory\n");
+        return -1;
+    }
+
+    int32_t size = fat_size();
+    if (size < 0) {
+        console_puts("grep: ");
+        console_puts(argv[3]);
+        console_puts(": Cannot read size\n");
+        fat_close();
+        return -1;
+    }
+
+    char buf[512];
+    if ((uint32_t)size > sizeof(buf)) {
+        console_puts("grep: file too large to buffer\n");
+        fat_close();
+        return -1;
+    }
+
+    int32_t n = fat_read(buf, (uint32_t)size);
+    if (n <= 0) {
+        fat_close();
+        return -1;
+    }
+
+    int found = 0;
+    for (int32_t i = 0; i + (int32_t)pat_len <= n; i++) {
+        int match = 1;
+        for (uint32_t j = 0; j < pat_len; j++) {
+            if (buf[i + j] != pat[j]) {
+                match = 0;
+                break;
+            }
+        }
+        if (match) {
+            found = 1;
+            /* Print from start of line to end of line */
+            int32_t line_start = i;
+            while (line_start > 0 && buf[line_start - 1] != '\n') {
+                line_start--;
+            }
+            int32_t line_end = i + (int32_t)pat_len;
+            while (line_end < n && buf[line_end] != '\n') {
+                line_end++;
+            }
+            for (int32_t k = line_start; k < line_end; k++) {
+                console_putc(buf[k]);
+            }
+            console_putc('\n');
+        }
+    }
+
+    if (!found) {
+        console_puts("grep: no matches\n");
+        fat_close();
+        return -1;
+    }
+
+    fat_close();
+    return 0;
+}
+
 static int command_cd(int argc, char *argv[]) {
     char path[SHELL_PATH_MAX];
 
@@ -891,6 +983,8 @@ static void dispatch(char *text) {
         result = command_tail(argc, argv);
     } else if (strcmp(command, "wc") == 0) {
         result = command_wc(argc, argv);
+    } else if (strcmp(command, "grep") == 0) {
+        result = command_grep(argc, argv);
     } else if (strcmp(command, "ls") == 0) {
         result = command_ls(argc, argv);
     } else if (strcmp(command, "cat") == 0) {
