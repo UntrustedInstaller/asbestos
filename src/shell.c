@@ -10,10 +10,11 @@
 /*
  * brash: the Asbestos SHell.
  *
- * First iteration. Built-in commands only, no disk, no filesystem, and no
- * quoting. Commands are prefixed with "please". Any error puts the shell in a
- * state where the next command must be prefixed with "sorry". The prompt makes
- * that state obvious: its feelings are hurt until the apology arrives.
+ * Built-in commands only, no quoting. Commands are prefixed with "please".
+ * Any error puts the shell in a state where the next command must be prefixed
+ * with "sorry". The prompt makes that state obvious: its feelings are hurt
+ * until the apology arrives, and it shows the current directory relative to
+ * the FAT root.
  *
  * These strings are the provisional contract. Keep them in one place so they
  * are easy to change when the exact wording is settled.
@@ -22,6 +23,8 @@
 
 #define SHELL_PROMPT_HOST "usr@brash"
 #define SHELL_PROMPT_HURT "(hurt feelings)"
+
+#define SHELL_PATH_MAX 64
 
 #define SHELL_MANNERS_ERROR_PLEASE "That is not the magic word. Say \"please\"."
 #define SHELL_MANNERS_ERROR_SORRY "An apology would be nice. Say \"sorry\"."
@@ -42,6 +45,9 @@
 static int apology_due;
 static char line[SHELL_LINE_MAX];
 
+/* Current directory relative to the FAT root ("" means root). */
+static char cwd[SHELL_PATH_MAX];
+
 static const char *required_word(void) {
     return apology_due ? "sorry" : "please";
 }
@@ -59,7 +65,101 @@ static void print_prompt(void) {
     if (apology_due) {
         console_puts(SHELL_PROMPT_HURT);
     }
+
+    console_puts(":~");
+    if (cwd[0]) {
+        console_putc('/');
+        console_puts(cwd);
+    }
     console_puts("> ");
+}
+
+/*
+ * Turn a user-supplied path into a normalised path relative to the FAT
+ * root. Absolute paths start at the root; relative paths start at cwd.
+ * Handles "." and ".." and collapses repeated slashes.
+ */
+static int resolve_path(const char *input, char *out) {
+    char combined[SHELL_PATH_MAX * 2];
+    int length = 0;
+    int out_length = 0;
+    int i;
+
+    if (input[0] != '/') {
+        for (i = 0; cwd[i]; i++) {
+            if (length + 1 >= (int)sizeof(combined)) {
+                return -1;
+            }
+            combined[length++] = cwd[i];
+        }
+        if (length + 1 >= (int)sizeof(combined)) {
+            return -1;
+        }
+        combined[length++] = '/';
+    }
+
+    for (i = 0; input[i]; i++) {
+        if (length + 1 >= (int)sizeof(combined)) {
+            return -1;
+        }
+        combined[length++] = input[i];
+    }
+    combined[length] = '\0';
+
+    out[0] = '\0';
+    i = 0;
+
+    while (combined[i]) {
+        int start;
+
+        while (combined[i] == '/') {
+            i++;
+        }
+        if (!combined[i]) {
+            break;
+        }
+
+        start = i;
+        while (combined[i] && combined[i] != '/') {
+            i++;
+        }
+
+        int component_length = i - start;
+
+        if (component_length == 1 && combined[start] == '.') {
+            continue;
+        }
+
+        if (component_length == 2 && combined[start] == '.' &&
+            combined[start + 1] == '.') {
+            while (out_length > 0 && out[out_length - 1] != '/') {
+                out_length--;
+            }
+            if (out_length > 0) {
+                out_length--;
+            }
+            out[out_length] = '\0';
+            continue;
+        }
+
+        if (out_length > 0) {
+            if (out_length + 1 >= SHELL_PATH_MAX) {
+                return -1;
+            }
+            out[out_length++] = '/';
+        }
+
+        if (out_length + component_length >= SHELL_PATH_MAX) {
+            return -1;
+        }
+
+        for (int k = 0; k < component_length; k++) {
+            out[out_length++] = combined[start + k];
+        }
+        out[out_length] = '\0';
+    }
+
+    return 0;
 }
 
 static int is_space(char c) {
@@ -149,6 +249,7 @@ static void command_help(void) {
     console_puts("  uname          print OS name and version\n");
     console_puts("  echo <text>    print text\n");
     console_puts("  clear          clear the screen\n");
+    console_puts("  cd [dir]       change directory\n");
     console_puts("  ls [-l] [dir]  list directory contents\n");
     console_puts("  cat <file>...  display file contents\n");
     console_puts("  halt           stop the machine\n");
@@ -189,30 +290,102 @@ static void command_echo(int argc, char *argv[]) {
     console_putc('\n');
 }
 
-static void command_ls(int argc, char *argv[]) {
+static int command_cd(int argc, char *argv[]) {
+    char path[SHELL_PATH_MAX];
+
+    if (argc < 3) {
+        cwd[0] = '\0';
+        return 0;
+    }
+
+    if (resolve_path(argv[2], path) != 0) {
+        console_puts("cd: path too long\n");
+        return -1;
+    }
+
+    if (!fat_is_dir(path)) {
+        console_puts("cd: ");
+        console_puts(argv[2]);
+        console_puts(": No such directory\n");
+        return -1;
+    }
+
+    int i;
+    for (i = 0; path[i] && i < SHELL_PATH_MAX - 1; i++) {
+        cwd[i] = path[i];
+    }
+    cwd[i] = '\0';
+    return 0;
+}
+
+static int command_ls(int argc, char *argv[]) {
     int long_format = 0;
-    const char *path = "";
+    const char *given = "";
+    char path[SHELL_PATH_MAX];
+
     for (int i = 2; i < argc; i++) {
         if (strcmp(argv[i], "-l") == 0) {
             long_format = 1;
         } else {
-            path = argv[i];
+            given = argv[i];
         }
     }
-    fat_list_dir(path, long_format);
-}
 
-static void command_cat(int argc, char *argv[]) {
-    if (argc < 3) {
-        console_puts("Usage: cat <file>...\n");
-        return;
+    if (given[0]) {
+        if (resolve_path(given, path) != 0) {
+            console_puts("ls: path too long\n");
+            return -1;
+        }
+    } else {
+        int i;
+        for (i = 0; cwd[i] && i < SHELL_PATH_MAX - 1; i++) {
+            path[i] = cwd[i];
+        }
+        path[i] = '\0';
     }
 
+    if (!fat_is_dir(path)) {
+        console_puts("ls: ");
+        console_puts(given[0] ? given : ".");
+        console_puts(": No such directory\n");
+        return -1;
+    }
+
+    return fat_list_dir(path, long_format) == 0 ? 0 : -1;
+}
+
+static int command_cat(int argc, char *argv[]) {
+    if (argc < 3) {
+        console_puts("Usage: cat <file>...\n");
+        return -1;
+    }
+
+    int failed = 0;
+
     for (int f = 2; f < argc; f++) {
-        if (fat_open(argv[f]) != 0) {
+        char path[SHELL_PATH_MAX];
+
+        if (resolve_path(argv[f], path) != 0) {
+            console_puts("cat: ");
+            console_puts(argv[f]);
+            console_puts(": Path too long\n");
+            failed = 1;
+            continue;
+        }
+
+        if (fat_is_dir(path)) {
+            console_puts("cat: ");
+            console_puts(argv[f]);
+            console_puts(": Is a directory\n");
+            failed = 1;
+            continue;
+        }
+
+        if (fat_open(path) != 0) {
             console_puts("cat: ");
             console_puts(argv[f]);
             console_puts(": No such file or directory\n");
+            failed = 1;
             continue;
         }
 
@@ -222,6 +395,7 @@ static void command_cat(int argc, char *argv[]) {
             console_puts(argv[f]);
             console_puts(": Cannot read size\n");
             fat_close();
+            failed = 1;
             continue;
         }
 
@@ -244,6 +418,8 @@ static void command_cat(int argc, char *argv[]) {
 
         fat_close();
     }
+
+    return failed ? -1 : 0;
 }
 
 static void command_halt(void) {
@@ -335,6 +511,7 @@ static void dispatch(char *text) {
     }
 
     const char *command = argv[1];
+    int result = 0;
 
     if (strcmp(command, "help") == 0) {
         command_help();
@@ -346,10 +523,12 @@ static void dispatch(char *text) {
         command_echo(argc, argv);
     } else if (strcmp(command, "clear") == 0) {
         console_clear();
+    } else if (strcmp(command, "cd") == 0) {
+        result = command_cd(argc, argv);
     } else if (strcmp(command, "ls") == 0) {
-        command_ls(argc, argv);
+        result = command_ls(argc, argv);
     } else if (strcmp(command, "cat") == 0) {
-        command_cat(argc, argv);
+        result = command_cat(argc, argv);
     } else if (strcmp(command, "halt") == 0) {
         command_halt();
     } else if (strcmp(command, "panic") == 0) {
@@ -364,7 +543,11 @@ static void dispatch(char *text) {
         return;
     }
 
-    note_success();
+    if (result == 0) {
+        note_success();
+    } else {
+        note_error();
+    }
 }
 
 void shell_run(void) {
