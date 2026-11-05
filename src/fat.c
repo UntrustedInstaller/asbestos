@@ -59,10 +59,16 @@ static uint32_t root_dir_sector = 0;
 static uint32_t root_dir_entries = 0;
 static uint32_t root_dir_size_sectors = 0;
 static uint32_t cluster_size_bytes = 0;
+static int      is_fat12 = 0;
 static int      is_fat32 = 0;
 
 /* LBA of the FAT boot sector (0 = sector 0 of the disk). */
 static uint32_t fat_boot_sector = 0;
+
+/* Optional in-memory disk image. When non-NULL, sector reads come from
+ * here instead of the ATA disk. */
+static const uint8_t *memdisk_base = 0;
+static uint32_t memdisk_sectors = 0;
 
 /* Current open file state */
 static uint32_t current_cluster = 0;
@@ -87,6 +93,22 @@ static uint32_t read_u32(const uint8_t *p) {
 }
 
 static int read_sector(uint32_t lba, void *buf) {
+    if (memdisk_base != 0) {
+        const uint8_t *src;
+        uint8_t *dst = (uint8_t *)buf;
+        uint32_t i;
+
+        if (lba >= memdisk_sectors) {
+            return -1;
+        }
+
+        src = memdisk_base + (lba * 512u);
+        for (i = 0; i < 512u; i++) {
+            dst[i] = src[i];
+        }
+        return 0;
+    }
+
     return ata_read_sectors(ATA_DRIVE, lba, 1, buf);
 }
 
@@ -105,6 +127,42 @@ static uint32_t fat_next_cluster(uint32_t cluster) {
     uint32_t fat_offset;
     uint32_t fat_sector;
     uint32_t fat_entry_offset;
+
+    if (is_fat12) {
+        uint16_t word;
+        uint16_t next;
+
+        /* FAT12 packs two 12-bit entries into every three bytes. */
+        fat_offset = cluster + (cluster >> 1);
+        fat_sector = fat_start_sector + (fat_offset / bytes_per_sector);
+        fat_entry_offset = fat_offset % bytes_per_sector;
+
+        if (read_sector(fat_sector, sector_buf)) {
+            return 0xFFFFFFFF;
+        }
+
+        if (fat_entry_offset == (uint32_t)(bytes_per_sector - 1)) {
+            /* The entry straddles this sector and the next one. */
+            uint8_t lo = sector_buf[fat_entry_offset];
+            if (read_sector(fat_sector + 1, sector_buf)) {
+                return 0xFFFFFFFF;
+            }
+            word = (uint16_t)lo | ((uint16_t)sector_buf[0] << 8);
+        } else {
+            word = read_u16(&sector_buf[fat_entry_offset]);
+        }
+
+        if (cluster & 1u) {
+            next = (uint16_t)(word >> 4);
+        } else {
+            next = (uint16_t)(word & 0x0FFFu);
+        }
+
+        if (next >= 0x0FF8u) {
+            return 0xFFFFFFFF;  /* EOC */
+        }
+        return next;
+    }
 
     if (is_fat32) {
         fat_offset = cluster * 4;
@@ -219,7 +277,7 @@ static void dir_entry_info(const uint8_t *entry, uint32_t *cluster, uint32_t *si
  * and returns 0. Returns -1 if not found. */
 static int scan_dir_for_name(uint32_t start_sector, uint32_t total_entries,
                              const char *name_11, uint32_t *found_cluster,
-                             uint32_t *found_size) {
+                             uint32_t *found_size, uint8_t *found_attr) {
     uint32_t entries_per_sector = bytes_per_sector / DIR_ENTRY_SIZE;
     uint32_t sector;
 
@@ -241,6 +299,9 @@ static int scan_dir_for_name(uint32_t start_sector, uint32_t total_entries,
             }
             if (dir_name_match(ent, name_11)) {
                 dir_entry_info(ent, found_cluster, found_size);
+                if (found_attr) {
+                    *found_attr = ent[DIR_ATTR];
+                }
                 return 0;
             }
         }
@@ -250,7 +311,8 @@ static int scan_dir_for_name(uint32_t start_sector, uint32_t total_entries,
 
 /* Scan a FAT32 directory cluster chain for a name. */
 static int scan_fat32_dir_chain(uint32_t start_cluster, const char *name_11,
-                                uint32_t *found_cluster, uint32_t *found_size) {
+                                uint32_t *found_cluster, uint32_t *found_size,
+                                uint8_t *found_attr) {
     uint32_t cluster = start_cluster;
     uint32_t entries_per_cluster = sectors_per_cluster *
                                    (bytes_per_sector / DIR_ENTRY_SIZE);
@@ -275,6 +337,9 @@ static int scan_fat32_dir_chain(uint32_t start_cluster, const char *name_11,
             }
             if (dir_name_match(ent, name_11)) {
                 dir_entry_info(ent, found_cluster, found_size);
+                if (found_attr) {
+                    *found_attr = ent[DIR_ATTR];
+                }
                 return 0;
             }
         }
@@ -312,11 +377,35 @@ int fat_init(void) {
 
     fat_start_sector = fat_boot_sector + reserved_sector_count;
 
-    if (read_u32(&bs[FAT32_ROOT_CLUSTER]) != 0 ||
-        read_u16(&bs[FAT_TOTAL_SECTORS16]) == 0) {
-        is_fat32 = 1;
-    } else {
+    /*
+     * The FAT type is determined by the number of data clusters, not by
+     * the presence of the FAT32 extended fields. Small volumes are FAT12.
+     */
+    {
+        uint32_t total_sectors = read_u16(&bs[FAT_TOTAL_SECTORS16]);
+        uint32_t root_dir_sectors;
+        uint32_t data_sectors;
+        uint32_t clusters;
+
+        if (total_sectors == 0) {
+            total_sectors = read_u32(&bs[FAT_TOTAL_SECTORS32]);
+        }
+
+        root_dir_sectors = ((uint32_t)root_dir_entries * DIR_ENTRY_SIZE +
+                            bytes_per_sector - 1) / bytes_per_sector;
+        data_sectors = total_sectors - reserved_sector_count -
+                       ((uint32_t)num_fats * sectors_per_fat) -
+                       root_dir_sectors;
+        clusters = data_sectors / sectors_per_cluster;
+
+        is_fat12 = 0;
         is_fat32 = 0;
+
+        if (clusters < 4085u) {
+            is_fat12 = 1;
+        } else if (clusters >= 65525u) {
+            is_fat32 = 1;
+        }
     }
 
     if (is_fat32) {
@@ -331,7 +420,11 @@ int fat_init(void) {
                             root_dir_sectors;
         root_dir_sector = fat_start_sector + (num_fats * sectors_per_fat);
         root_dir_size_sectors = root_dir_sectors;
-        serial_puts("fat: FAT16 detected\n");
+        if (is_fat12) {
+            serial_puts("fat: FAT12 detected\n");
+        } else {
+            serial_puts("fat: FAT16 detected\n");
+        }
     }
 
     cluster_size_bytes = (uint32_t)sectors_per_cluster * bytes_per_sector;
@@ -373,17 +466,18 @@ int fat_open(const char *path) {
 
         if (is_fat32) {
             found = scan_fat32_dir_chain(cur_cluster, name_11,
-                                         &found_cluster, &found_size);
+                                         &found_cluster, &found_size, 0);
         } else {
             if (!in_dir) {
                 /* FAT16 root directory is linear, not a cluster chain */
                 found = scan_dir_for_name(root_dir_sector, root_dir_entries,
-                                          name_11, &found_cluster, &found_size);
+                                          name_11, &found_cluster, &found_size,
+                                          0);
                 in_dir = 1;
             } else {
                 /* Subdirectory in FAT16 - treat as cluster chain */
                 found = scan_fat32_dir_chain(cur_cluster, name_11,
-                                             &found_cluster, &found_size);
+                                             &found_cluster, &found_size, 0);
             }
         }
 
@@ -484,7 +578,113 @@ int fat_is_open(void) {
     return file_open;
 }
 
-void fat_list_dir(const char *path, int long_format) {
+int fat_is_dir(const char *path) {
+    char name_11[11];
+    int pos = 0;
+    int first = 1;
+    uint32_t cur_cluster = 0;
+
+    if (path == 0 || path[0] == '\0') {
+        return 1;  /* the root directory always exists */
+    }
+
+    if (is_fat32) {
+        uint8_t bs[512];
+        if (read_sector(fat_boot_sector, bs)) {
+            return 0;
+        }
+        cur_cluster = read_u32(&bs[FAT32_ROOT_CLUSTER]);
+    }
+
+    while (path[pos]) {
+        int consumed = parse_component(&path[pos], name_11);
+        uint32_t found_cluster = 0;
+        uint32_t found_size = 0;
+        uint8_t found_attr = 0;
+        int found;
+
+        pos += consumed;
+
+        if (is_fat32 || !first) {
+            found = scan_fat32_dir_chain(cur_cluster, name_11,
+                                         &found_cluster, &found_size,
+                                         &found_attr);
+        } else {
+            found = scan_dir_for_name(root_dir_sector, root_dir_entries,
+                                      name_11, &found_cluster, &found_size,
+                                      &found_attr);
+        }
+
+        if (found != 0 || !(found_attr & ATTR_DIRECTORY)) {
+            return 0;
+        }
+
+        cur_cluster = found_cluster;
+        first = 0;
+    }
+
+    return 1;
+}
+
+static void print_dir_entry(const uint8_t *ent, int long_format) {
+    char disp[13];
+    int j = 0;
+    int k;
+
+    /* Format display name from the 11-char padded entry. */
+    for (k = 0; k < 8; k++) {
+        if (ent[DIR_NAME + k] != ' ') {
+            disp[j++] = ent[DIR_NAME + k];
+        }
+    }
+
+    int has_ext = 0;
+    for (k = 8; k < 11; k++) {
+        if (ent[DIR_NAME + k] != ' ') {
+            has_ext = 1;
+            break;
+        }
+    }
+    if (has_ext) {
+        disp[j++] = '.';
+        for (k = 8; k < 11; k++) {
+            if (ent[DIR_NAME + k] != ' ') {
+                disp[j++] = ent[DIR_NAME + k];
+            }
+        }
+    }
+    disp[j] = '\0';
+
+    if (long_format) {
+        if (ent[DIR_ATTR] & ATTR_DIRECTORY) {
+            console_puts("        <DIR> ");
+        } else {
+            uint32_t sz = read_u32(&ent[DIR_FILE_SIZE]);
+            uint32_t tmp = sz;
+            int digits = 1;
+            while (tmp >= 10) {
+                tmp /= 10;
+                digits++;
+            }
+            for (int s = digits; s < 12; s++) {
+                console_putc(' ');
+            }
+            console_put_dec(sz);
+            console_putc(' ');
+        }
+        console_puts(disp);
+        console_putc('\n');
+    } else {
+        console_puts(disp);
+        if (ent[DIR_ATTR] & ATTR_DIRECTORY) {
+            console_puts("  <DIR>\n");
+        } else {
+            console_putc('\n');
+        }
+    }
+}
+
+int fat_list_dir(const char *path, int long_format) {
     char name_11[11];
     int pos = 0;
     uint32_t cur_cluster = 0;
@@ -494,7 +694,7 @@ void fat_list_dir(const char *path, int long_format) {
         uint8_t bs[512];
         if (read_sector(fat_boot_sector, bs)) {
             serial_puts("fat: failed to read boot sector\n");
-            return;
+            return -1;
         }
         cur_cluster = read_u32(&bs[FAT32_ROOT_CLUSTER]);
     } else {
@@ -510,20 +710,51 @@ void fat_list_dir(const char *path, int long_format) {
         uint32_t found_size = 0;
         int found = -1;
 
-        if (is_fat32) {
+        if (is_fat32 || cur_cluster != 0) {
             found = scan_fat32_dir_chain(cur_cluster, name_11,
-                                         &found_cluster, &found_size);
+                                         &found_cluster, &found_size, 0);
         } else {
             found = scan_dir_for_name(root_dir_sector, root_dir_entries,
-                                      name_11, &found_cluster, &found_size);
+                                      name_11, &found_cluster, &found_size, 0);
         }
 
         if (found != 0) {
             serial_puts("fat: directory not found\n");
-            return;
+            return -1;
         }
 
         cur_cluster = found_cluster;
+    }
+
+    /* FAT12/FAT16 root directories are a fixed linear region, not a cluster
+     * chain (cur_cluster == 0 marks that case). */
+    if (!is_fat32 && cur_cluster == 0) {
+        uint32_t sector;
+
+        for (sector = 0; sector < root_dir_size_sectors; sector++) {
+            uint32_t e;
+
+            if (read_sector(root_dir_sector + sector, sector_buf)) {
+                return -1;
+            }
+
+            for (e = 0; e < bytes_per_sector / DIR_ENTRY_SIZE; e++) {
+                const uint8_t *ent = &sector_buf[e * DIR_ENTRY_SIZE];
+
+                if (ent[DIR_NAME] == DIR_FREE) {
+                    return 0;
+                }
+                if (ent[DIR_NAME] == DIR_DELETED) {
+                    continue;
+                }
+                if (ent[DIR_ATTR] == ATTR_LFN) {
+                    continue;
+                }
+
+                print_dir_entry(ent, long_format);
+            }
+        }
+        return 0;
     }
 
     /* List all entries in the directory */
@@ -537,12 +768,12 @@ void fat_list_dir(const char *path, int long_format) {
         for (e = 0; e < entries_per_cluster; e++) {
             uint32_t sector_in_cluster = lba + ((e * DIR_ENTRY_SIZE) / bytes_per_sector);
             if (read_sector(sector_in_cluster, sector_buf)) {
-                return;
+                return -1;
             }
             const uint8_t *ent = &sector_buf[(e * DIR_ENTRY_SIZE) % bytes_per_sector];
 
             if (ent[DIR_NAME] == DIR_FREE) {
-                return;  /* end of directory */
+                return 0;  /* end of directory */
             }
             if (ent[DIR_NAME] == DIR_DELETED) {
                 continue;
@@ -551,64 +782,19 @@ void fat_list_dir(const char *path, int long_format) {
                 continue;
             }
 
-            /* Format display name from 11-char padded entry */
-            char disp[13];
-            int j = 0;
-            int k;
-            for (k = 0; k < 8; k++) {
-                if (ent[DIR_NAME + k] != ' ') {
-                    disp[j++] = ent[DIR_NAME + k];
-                }
-            }
-            int has_ext = 0;
-            for (k = 8; k < 11; k++) {
-                if (ent[DIR_NAME + k] != ' ') {
-                    has_ext = 1;
-                    break;
-                }
-            }
-            if (has_ext) {
-                disp[j++] = '.';
-                for (k = 8; k < 11; k++) {
-                    if (ent[DIR_NAME + k] != ' ') {
-                        disp[j++] = ent[DIR_NAME + k];
-                    }
-                }
-            }
-            disp[j] = '\0';
-
-            if (long_format) {
-                if (ent[DIR_ATTR] & ATTR_DIRECTORY) {
-                    console_puts("        <DIR> ");
-                } else {
-                    uint32_t sz = read_u32(&ent[DIR_FILE_SIZE]);
-                    uint32_t tmp = sz;
-                    int digits = 1;
-                    while (tmp >= 10) {
-                        tmp /= 10;
-                        digits++;
-                    }
-                    for (int s = digits; s < 12; s++) {
-                        console_putc(' ');
-                    }
-                    console_put_dec(sz);
-                    console_putc(' ');
-                }
-                console_puts(disp);
-                console_putc('\n');
-            } else {
-                console_puts(disp);
-                if (ent[DIR_ATTR] & ATTR_DIRECTORY) {
-                    console_puts("  <DIR>\n");
-                } else {
-                    console_putc('\n');
-                }
-            }
+            print_dir_entry(ent, long_format);
         }
         cluster = fat_next_cluster(cluster);
     }
+
+    return 0;
 }
 
 void fat_set_boot_sector(uint32_t lba) {
     fat_boot_sector = lba;
+}
+
+void fat_set_memdisk(const void *base, uint32_t size) {
+    memdisk_base = (const uint8_t *)base;
+    memdisk_sectors = size / 512u;
 }

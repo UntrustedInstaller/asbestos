@@ -6,9 +6,10 @@
 /*
  * FAT16 / FAT32 read-only filesystem driver.
  *
- * Reads sectors via ata_read_sectors() from the primary ATA master drive.
- * First pass supports short filenames (8.3) only, no long filename (LFN)
- * support, read-only.
+ * Reads sectors from the primary ATA master drive, or from an in-memory
+ * image installed with fat_set_memdisk(). Supports FAT12, FAT16 and FAT32
+ * with short filenames (8.3) only; no long filename (LFN) support, and
+ * read-only.
  */
 
 /* Returns 0 on success, -1 on error. */
@@ -17,6 +18,12 @@ int fat_init(void);
 /* Set the LBA of the FAT boot sector (default 0). Useful when the disk
  * has an MBR and the FAT partition starts at a non-zero LBA. */
 void fat_set_boot_sector(uint32_t lba);
+
+/* Serve all sector reads from an in-memory FAT image instead of the ATA
+ * disk. Pass NULL to go back to ATA reads. This lets the kernel read a
+ * filesystem embedded in the kernel image, which works no matter how the
+ * machine booted (USB, AHCI, legacy IDE). */
+void fat_set_memdisk(const void *base, uint32_t size);
 
 /*
  * Open a file by path. Path uses forward slashes, e.g. "SYSTEM/FOO.TXT".
@@ -39,7 +46,11 @@ int fat_is_open(void);
 
 /* List all entries in a directory. Path uses forward slashes, e.g. "SUBDIR".
  * An empty path lists the root directory. If long_format is non-zero, print
- * entry sizes (Unix `ls -l` style). */
-void fat_list_dir(const char *path, int long_format);
+ * entry sizes (Unix `ls -l` style). Returns 0 on success, -1 on error. */
+int fat_list_dir(const char *path, int long_format);
+
+/* Returns 1 if path names an existing directory (the empty path is the
+ * root), 0 otherwise. */
+int fat_is_dir(const char *path);
 
 #endif
