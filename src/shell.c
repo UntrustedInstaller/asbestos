@@ -267,6 +267,7 @@ static void command_help(void) {
     console_puts("  true           do nothing, successfully\n");
     console_puts("  false          do nothing, unsuccessfully\n");
     console_puts("  sleep <secs>   busy-wait for the given seconds\n");
+    console_puts("  stat <file>    print file size\n");
     console_puts("  ls [-l] [-a] [dir]  list directory contents\n");
     console_puts("  cat <file>...  display file contents\n");
     console_puts("  halt           stop the machine\n");
@@ -343,6 +344,47 @@ static int command_sleep(int argc, char *argv[]) {
         cpu_pause();
     }
 
+    return 0;
+}
+
+static int command_stat(int argc, char *argv[]) {
+    if (argc < 3) {
+        console_puts("Usage: stat <file>\n");
+        return -1;
+    }
+
+    char path[SHELL_PATH_MAX];
+    if (resolve_path(argv[2], path) != 0) {
+        console_puts("stat: path too long\n");
+        return -1;
+    }
+
+    if (fat_is_dir(path)) {
+        console_puts("stat: ");
+        console_puts(argv[2]);
+        console_puts(": Is a directory\n");
+        return -1;
+    }
+
+    if (fat_open(path) != 0) {
+        console_puts("stat: ");
+        console_puts(argv[2]);
+        console_puts(": No such file or directory\n");
+        return -1;
+    }
+
+    int32_t size = fat_size();
+    if (size < 0) {
+        console_puts("stat: ");
+        console_puts(argv[2]);
+        console_puts(": Cannot read size\n");
+        fat_close();
+        return -1;
+    }
+
+    console_put_dec((uint32_t)size);
+    console_puts(" bytes\n");
+    fat_close();
     return 0;
 }
 
@@ -610,6 +652,8 @@ static void dispatch(char *text) {
         result = command_false(argc, argv);
     } else if (strcmp(command, "sleep") == 0) {
         result = command_sleep(argc, argv);
+    } else if (strcmp(command, "stat") == 0) {
+        result = command_stat(argc, argv);
     } else if (strcmp(command, "ls") == 0) {
         result = command_ls(argc, argv);
     } else if (strcmp(command, "cat") == 0) {
