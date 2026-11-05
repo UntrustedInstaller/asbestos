@@ -17,17 +17,24 @@
 ;   0x8000..        this loader
 ;   0x10000..0x2FFFF  kernel image (128 KiB max, 4-byte size header)
 ;
+; With PART_OFFSET=0 (floppy): kernel starts at LBA 9.
+; With PART_OFFSET=1 (MBR):    kernel starts at LBA 10.
+;
 ; The kernel is linked at 0x00100000.
 ; =====================================================================
 
 [org 0x8000]
 bits 16
 
+%ifndef PART_OFFSET
+%define PART_OFFSET 0
+%endif
+
 BOOT_INFO       equ 0x5000
 VBE_CTRL        equ 0x6000
 VBE_MODE        equ 0x6200
 KERNEL_LOAD     equ 0x10000
-KERNEL_LBA      equ 9
+KERNEL_LBA      equ 9 + PART_OFFSET
 KERNEL_SECTORS  equ 256          ; 128 KiB
 KERNEL_MAX      equ 128 * 1024 - 4
 
