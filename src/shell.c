@@ -270,6 +270,7 @@ static void command_help(void) {
     console_puts("  stat <file>    print file size\n");
     console_puts("  head <file> [n]  print first N bytes (default 256)\n");
     console_puts("  tail <file> [n]  print last N bytes (default 256)\n");
+    console_puts("  wc <file>        count bytes, words, and lines\n");
     console_puts("  ls [-l] [-a] [dir]  list directory contents\n");
     console_puts("  cat <file>...  display file contents\n");
     console_puts("  halt           stop the machine\n");
@@ -528,6 +529,91 @@ static int command_tail(int argc, char *argv[]) {
         console_putc(buf[i]);
     }
     console_putc('\n');
+
+    fat_close();
+    return 0;
+}
+
+static int command_wc(int argc, char *argv[]) {
+    if (argc < 3) {
+        console_puts("Usage: wc <file>\n");
+        return -1;
+    }
+
+    char path[SHELL_PATH_MAX];
+    if (resolve_path(argv[2], path) != 0) {
+        console_puts("wc: path too long\n");
+        return -1;
+    }
+
+    if (fat_is_dir(path)) {
+        console_puts("wc: ");
+        console_puts(argv[2]);
+        console_puts(": Is a directory\n");
+        return -1;
+    }
+
+    if (fat_open(path) != 0) {
+        console_puts("wc: ");
+        console_puts(argv[2]);
+        console_puts(": No such file or directory\n");
+        return -1;
+    }
+
+    int32_t size = fat_size();
+    if (size < 0) {
+        console_puts("wc: ");
+        console_puts(argv[2]);
+        console_puts(": Cannot read size\n");
+        fat_close();
+        return -1;
+    }
+
+    char buf[512];
+    if ((uint32_t)size > sizeof(buf)) {
+        console_puts("wc: file too large to buffer\n");
+        fat_close();
+        return -1;
+    }
+
+    int32_t n = fat_read(buf, (uint32_t)size);
+    if (n <= 0) {
+        fat_close();
+        return -1;
+    }
+
+    uint32_t bytes = (uint32_t)n;
+    uint32_t words = 0;
+    uint32_t lines = 0;
+    int in_word = 0;
+
+    for (int32_t i = 0; i < n; i++) {
+        char c = buf[i];
+        if (c == '\n') {
+            lines++;
+            if (in_word) {
+                words++;
+                in_word = 0;
+            }
+        } else if (c == ' ' || c == '\t' || c == '\r') {
+            if (in_word) {
+                words++;
+                in_word = 0;
+            }
+        } else {
+            in_word = 1;
+        }
+    }
+    if (in_word) {
+        words++;
+    }
+
+    console_put_dec(bytes);
+    console_puts(" bytes, ");
+    console_put_dec(words);
+    console_puts(" words, ");
+    console_put_dec(lines);
+    console_puts(" lines\n");
 
     fat_close();
     return 0;
@@ -803,6 +889,8 @@ static void dispatch(char *text) {
         result = command_head(argc, argv);
     } else if (strcmp(command, "tail") == 0) {
         result = command_tail(argc, argv);
+    } else if (strcmp(command, "wc") == 0) {
+        result = command_wc(argc, argv);
     } else if (strcmp(command, "ls") == 0) {
         result = command_ls(argc, argv);
     } else if (strcmp(command, "cat") == 0) {
