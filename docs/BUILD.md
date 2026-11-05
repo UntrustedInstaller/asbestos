@@ -1,7 +1,7 @@
 # Building asbestOS
 
-This tree builds the 32-bit image: protected mode, a VBE framebuffer console, a
-polled PS/2 keyboard, and the first iteration of `brash`. See
+This tree builds the 32-bit image: protected mode, a VBE framebuffer console, an
+IRQ-driven PS/2 keyboard, a read-only FAT filesystem, and `brash`. See
 [DOCS.md](DOCS.md) for the architecture.
 
 ## Prerequisites
@@ -180,22 +180,42 @@ printf 'screendump /tmp/shell.ppm\n' | socat - UNIX-CONNECT:/tmp/qemu-mon
 ```
 
 The serial log should gain `brash: please help`, and the screenshot should show
-the command list at `usr@brash>`. To verify the manners gate:
+the command list at `usr@brash:~>`. To verify the manners gate:
 
 ```bash
-type_keys h e l p ret                       # wrong word, sets apology debt
+type_keys h e l p ret                       # wrong word: hurt feelings
+type_keys h e l p ret                       # still no apology: visibly upset
+type_keys h e l p ret                       # deeply offended
+type_keys h e l p ret                       # still deeply offended
 type_keys s o r r y spc h e l p ret         # apology accepted, debt cleared
 ```
 
 The first line should produce `That is not the magic word. Say "please".` and
-the second should run `help`.
+leave the prompt reading `usr@brash(hurt feelings):~>`. The next three produce
+`An apology would be nice. Say "sorry".`, with the prompt progressing to
+`usr@brash(visibly upset):~>` and then `usr@brash(deeply offended):~>`, where it
+stays. The final line runs `help` and restores the normal `usr@brash:~>` prompt.
+
+To verify the working directory and path resolution:
+
+```bash
+type_keys p l e a s e spc c d spc s u b d i r ret
+type_keys p l e a s e spc l s ret
+type_keys p l e a s e spc c a t spc n e s t e d dot t x t ret
+type_keys p l e a s e spc c d spc dot dot ret
+```
+
+After the first line the prompt should read `usr@brash:~/subdir>`, `ls` should
+list `NESTED.TXT`, `cat` should print `nested file content`, and `cd ..` should
+return the prompt to `usr@brash:~>`. A missing directory or file adds to the
+apology debt and upsets the prompt.
 
 ## Testing the panic screen
 
 The shell has a built-in `panic` command that deliberately divides by zero:
 
 ```text
-usr@brash> please panic
+usr@brash:~> please panic
 ```
 
 If an earlier command failed, the usual manners rule applies: use
@@ -236,7 +256,7 @@ __asm__ __volatile__("mov $0x20, %%ax\n\t"
 
 That raises `#GP` and the report should show `error=0x00000020`. **Remove the
 injection afterwards** and confirm normal boot returns to the banner and the
-`usr@brash>` prompt.
+`usr@brash:~>` prompt.
 
 ## Troubleshooting
 
@@ -259,10 +279,10 @@ firmware rejected by stage 2 will fall back to BIOS text mode instead of
 reaching the kernel.
 
 **Serial stops after `asbestOS kernel entered`.** That is normal. The shell is
-waiting at `usr@brash>` and only logs a line once it is entered. If the screen
+waiting at `usr@brash:~>` and only logs a line once it is entered. If the screen
 shows the prompt, the machine is fine.
 
-**Typing does nothing at `usr@brash>`.** Click the QEMU window to give it focus.
+**Typing does nothing at `usr@brash:~>`.** Click the QEMU window to give it focus.
 With `-display none`, drive the guest through the monitor's `sendkey` command as
 shown above. Also make sure the keyboard is a PS/2 device; the driver does not
 speak USB HID.

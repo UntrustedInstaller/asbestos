@@ -1,17 +1,17 @@
 # asbestOS 32-bit — Milestone 2 in progress
 
 > **Status:** working draft. Milestone 1 boots and renders correctly under QEMU.
-> Milestone 2 has an IDT, a panic screen, a polled PS/2 keyboard, and the first
-> iteration of `brash`. This document describes the entire current tree in
-> `src/`.
+> Milestone 2 has an IDT, a panic screen, a PIT, an IRQ-driven PS/2 keyboard, a
+> read-only FAT filesystem, and `brash`. This document describes the entire
+> current tree in `src/`.
 
 Milestone 1 is deliberately narrow: leave the BIOS behind, enter flat 32-bit
 protected mode, put the machine into a VBE linear-framebuffer mode, and draw an
 80×25 text console in exactly the two colours the project requires.
 
-Milestone 2 adds exception handling, a polled keyboard, and `brash`. There is
-still no interrupt controller, no storage driver, and no filesystem; hardware
-interrupts remain masked.
+Milestone 2 adds exception handling, the PIC and PIT, an IRQ-driven keyboard, an
+ATA PIO path with a read-only FAT filesystem, and `brash`. Hardware interrupts
+are enabled.
 
 **Only the BIOS-required boot stub and stage 2 loader are 16-bit.** Once the CPU
 enters protected mode, every instruction executed is 32-bit.
@@ -265,8 +265,11 @@ idtp.base  = &idt[0];
 asm volatile("lidt %0" : : "m"(idtp));
 ```
 
-Hardware IRQs remain masked (`eflags.IF == 0`), so the timer, keyboard, and
-other devices cannot fire yet. Vector `0x80` is not special-cased either.
+The PIC is remapped so IRQ 0–15 land on vectors `0x20`–`0x2F`, and the CPU
+enables interrupts once the handlers are installed. IRQ 0 drives the PIT tick,
+IRQ 1 delivers keyboard scancodes, other IRQs are acknowledged and ignored, and
+vectors outside that range panic as unexpected. Vector `0x80` is not
+special-cased.
 
 ### Stubs and the trap frame
 
@@ -353,46 +356,65 @@ line up.
 
 ## 8. Keyboard and brash
 
-### Polled PS/2 keyboard
+### IRQ-driven PS/2 keyboard
 
 `src/keyboard.c` reads the 8042 controller directly through ports `0x64`
-(status) and `0x60` (data). It is polling-only because the PIC has not been
-remapped and hardware interrupts are still masked. `kernel_main()` calls
-`keyboard_init()` to drain anything the firmware left in the output buffer, then
-`brash` spins on `keyboard_poll()`.
+(status) and `0x60` (data). IRQ 1 fires when a scancode is ready; the handler
+pushes it into a small ring buffer and acknowledges the PIC. `keyboard_init()`
+drains anything the firmware left in the output buffer before interrupts are
+unmasked.
 
-`keyboard_poll()` returns `0` when no key is ready. Otherwise it returns ASCII
-for printable keys, `\b` for Backspace, `\n` for Enter, and `\t` for Tab. It
-consumes key releases, tracks left/right Shift and Caps Lock, and drops extended
-(`0xE0`-prefixed) keys such as arrows. It also ignores bytes flagged as AUX
-(mouse) data.
+`keyboard_poll()` decodes one buffered scancode and returns `0` when the buffer
+is empty. Otherwise it returns ASCII for printable keys, `\b` for Backspace,
+`\n` for Enter, and `\t` for Tab. It consumes key releases, tracks left/right
+Shift and Caps Lock, and drops extended (`0xE0`-prefixed) keys such as arrows.
+It also ignores bytes flagged as AUX (mouse) data. `keyboard_read_char()` waits
+for the buffer to become non-empty, then decodes one character.
 
 The driver assumes scancode set 1, which is what the 8042 translation mode
 produces on the target machines. Unsupported keys are simply ignored. The shell
-idles with `cpu_pause()` rather than `hlt` because there is no interrupt to wake
-it; that busy-wait is a deliberate first-iteration cost, not the final design.
+still busy-waits with `cpu_pause()` while the buffer is empty; it does not yet
+sleep on an interrupt, so an idle shell keeps the CPU warm.
 
 ### brash
 
-`brash` is the Asbestos SHell. Its prompt is always `usr@brash>` followed by a
-space, so it looks like:
+`brash` is the Asbestos SHell. Its prompt follows the bash `user@host:cwd>`
+shape, with `~` standing for the FAT root:
 
 ```text
-usr@brash>
+usr@brash:~>
+usr@brash:~/SUBDIR>
 ```
 
-The prompt does **not** reveal the required manners word. The rule is:
+The directory shown is the shell's current working directory, not the physical
+path of the filesystem. `cd` changes it, `cd` with no argument returns to the
+root, and `ls`/`cat` resolve relative names against it. Absolute paths still
+start at `/`.
+
+When an apology is due, the prompt makes its feelings known. Each additional
+error makes it more upset:
+
+| Errors | Prompt |
+|--------|--------|
+| 1 | `usr@brash(hurt feelings):~/SUBDIR>` |
+| 2 | `usr@brash(visibly upset):~/SUBDIR>` |
+| 3+ | `usr@brash(deeply offended):~/SUBDIR>` |
+
+The prompt reveals that an apology is owed, but not the exact manners word.
+The rule is:
 
 - A command normally starts with `please`.
-- Any error sets an **apology debt**. The next command must start with `sorry`.
+- Every error adds to the **apology debt**. The next command must start with
+  `sorry`.
 - A successful command clears the debt.
-- Blank lines are ignored and do not clear the debt.
-- `sorry` used when no error occurred is itself an error, which creates an
-  apology debt.
+- Blank lines are ignored and do not change the debt.
+- `sorry` used when no error occurred is itself an error, which adds to the
+  debt.
 
-Everything the shell counts as an error sets the debt: the wrong magic word, an
-empty command, a compound statement, too many arguments, and an unknown command.
-A malformed apology does not clear an existing debt.
+Everything the shell counts as an error adds to the debt: the wrong magic word,
+an empty command, a compound statement, too many arguments, an unknown command,
+and a failed `cd`/`ls`/`cat`. A malformed apology does not clear an existing
+debt.
 
 The error strings are provisional and live together at the top of `src/shell.c`:
 
@@ -400,7 +422,7 @@ The error strings are provisional and live together at the top of `src/shell.c`:
 |-----------|--------|
 | `please` required | `That is not the magic word. Say "please".` |
 | `sorry` required | `An apology would be nice. Say "sorry".` |
-| Compound statement | `Compound statements are not permitted. I can't multitask well` |
+| Compound statement | `I can't multitask well. Please avoid compound statements.` |
 | No command after the magic word | `No command was given. Do you normally stare blankly at people?` |
 | Too many tokens | `Too many arguments. I can't keep track of all of that.` |
 | Unknown command | `Unknown command: <name>` |
@@ -413,11 +435,19 @@ The first iteration is built-in only:
 |---------|--------|
 | `help` | List the commands and the manners rule |
 | `about` | Print the shell name and version |
+| `uname [-a]` | Print the OS name and version; `-a` adds build details |
 | `echo <text>` | Print the remaining arguments, separated by single spaces |
 | `clear` | Clear the console |
+| `cd [dir]` | Change directory; no argument returns to the root |
+| `ls [-l] [dir]` | List a directory, relative to the current directory by default |
+| `cat <file>...` | Print one or more files, relative to the current directory |
 | `halt` | Stop the machine |
 | `panic` | Force a divide error and enter the panic screen |
 | `reboot` | Reset the machine |
+
+Paths accept `.`, `..`, repeated slashes, and absolute names beginning with
+`/`. FAT 8.3 lookups are case-insensitive, but the prompt preserves the case
+used in the `cd` command.
 
 The line editor supports printable ASCII and Backspace. The input buffer is 64
 bytes, and the parser accepts at most 8 whitespace-separated tokens. There is no
@@ -431,25 +461,33 @@ pretending to parse them.
 A short session:
 
 ```text
-usr@brash> help
+usr@brash:~> help
 That is not the magic word. Say "please".
-usr@brash> please help
+usr@brash(hurt feelings):~> please help
 An apology would be nice. Say "sorry".
-usr@brash> sorry help
+usr@brash(hurt feelings):~> sorry help
 Commands
   help           show this list
   about          identify this shell
+  uname          print OS name and version
   echo <text>    print text
   clear          clear the screen
+  cd [dir]       change directory
+  ls [-l] [dir]  list directory contents
+  cat <file>...  display file contents
   halt           stop the machine
   panic          force a CPU fault
   reboot         reboot the machine
 
 Prefix a command with "please".
 After an error, apologise with "sorry".
-usr@brash> please echo hi
+Each error upsets the prompt more. Apologise to calm it down.
+usr@brash:~> please echo hi
 hi
-usr@brash>
+usr@brash:~> please cd subdir
+usr@brash:~/subdir> please cat nested.txt
+nested file content
+usr@brash:~/subdir>
 ```
 
 Each entered line is mirrored to COM1 as `brash: <line>`, which makes headless
@@ -484,7 +522,7 @@ Expected serial output from a successful boot:
 asbestOS kernel entered
 ```
 
-The serial log then stays quiet until a line is entered at `usr@brash>`. Each
+The serial log then stays quiet until a line is entered at `usr@brash:~>`. Each
 entered line is mirrored as `brash: <line>`; `halt` also prints
 `brash: halted by user`. A correct screenshot contains only two colours:
 `#4B2222` and `#C39393`.
@@ -495,13 +533,13 @@ entered line is mirrored as `brash: <line>`; `halt` also prints
 
 The tree is still deliberately incomplete:
 
-- **Hardware interrupts** — the IDT and exception path exist, but the PIC is
-  not remapped and no IRQ fires. Input is therefore polled.
-- **Polled input** — `brash` busy-waits on the keyboard with `cpu_pause()`.
-  There is no IRQ-driven keyboard and no input timeout yet.
-- **Storage** — no ATA PIO driver and no FAT16/FAT32 layer yet.
-- **`brash`** — built-in commands only. It cannot run programs, read files, or
-  touch the disk.
+- **Input timeouts** — keyboard input is IRQ-driven, but the shell waits
+  forever for the next key.
+- **Storage** — read-only ATA PIO plus FAT12/FAT16/FAT32. USB and AHCI systems
+  that the ATA driver cannot reach fall back to an embedded 64 KiB FAT12 image.
+  There is no write support.
+- **`brash`** — built-in commands only. It cannot run programs, but it can read
+  files and change directory on the read-only filesystem.
 - **Line editing** — printable ASCII and Backspace only. No cursor movement, no
   history, no quoting or escaping, no globbing, no tab completion.
 - **Compound statements** — rejected outright rather than parsed.
@@ -510,7 +548,8 @@ The tree is still deliberately incomplete:
 - **Text modes** — VBE graphics only; if no 32-bpp linear mode exists, boot fails
   with a BIOS text message.
 - **Unicode** — ASCII `0x20`–`0x7F` only.
-- **Cursor blinking** — the underline is static.
+- **Cursor** — a software underline blinking on the PIT tick, not a hardware
+  cursor.
 
 The kernel also assumes a single CPU, no SMIs interfering with the framebuffer,
 and a firmware that leaves A20 controllable through port `0x92`.
@@ -519,30 +558,33 @@ and a firmware that leaves A20 controllable through port `0x92`.
 
 ## 11. Milestone 2 and beyond
 
-Milestone 2 is in progress. The IDT and panic screen, the polled PS/2 keyboard,
-and the first iteration of `brash` are done.
+Milestone 2 is in progress. The IDT and panic screen, the PIT and IRQ-driven
+PS/2 keyboard, the read-only filesystem, and `brash` are done.
 
-The shell is called **`brash`**, the Asbestos SHell. Its prompt is `usr@brash>`.
-Commands are prefixed with `please`; after an error, the next command must be
-prefixed with `sorry`. The exact error strings and the ban on compound
-statements are not optional features; they are the point.
+The shell is called **`brash`**, the Asbestos SHell. Its normal prompt is
+`usr@brash:~>` (with the current directory after the colon). Errors make it
+progressively more upset: `(hurt feelings)`, then `(visibly upset)`, then
+`(deeply offended)` until the apology arrives. Commands are prefixed with
+`please`; after an error, the next command must be prefixed with `sorry`. The
+exact error strings and the ban on compound statements are not optional
+features; they are the point.
 
 The intended order for the rest is:
 
 1. ~~**IDT and exception handling.**~~ Done: faults now produce a readable panic
    screen instead of a triple-fault reboot.
-2. **PIC remap and PIT.** A timer tick is the foundation for IRQ-driven input
-   and later scheduling.
-3. ~~**PS/2 keyboard driver.**~~ Polled first pass done: scancode set 1,
-   shifted characters, Caps Lock, Backspace, Enter, and Tab. Move it behind
-   IRQ 1 once the PIC is remapped.
-4. **ATA PIO driver.** Identify the disk from `BootInfo.boot_drive`, read sectors
-   with LBA28. Polling is fine to start.
-5. **FAT16/FAT32 read-only layer.** BPB validation, cluster chains, directory
-   traversal, `open`/`read`.
-6. ~~**`brash` and the manners gate.**~~ First iteration done: a fixed
-   `usr@brash>` prompt, `please` normally, `sorry` after an error, exact error
-   strings, and no compound statements. Grow it once there is a filesystem.
+2. ~~**PIC remap and PIT.**~~ Done: the PIC is remapped, the PIT ticks at
+   100 Hz, and IRQ 0 drives console work.
+3. ~~**PS/2 keyboard driver.**~~ Done: scancode set 1, shifted characters,
+   Caps Lock, Backspace, Enter, and Tab, delivered behind IRQ 1.
+4. ~~**ATA PIO driver.**~~ Done: the disk from `BootInfo.boot_drive` is read
+   with LBA28, with an embedded FAT12 fallback for machines the driver cannot
+   reach.
+5. ~~**FAT12/FAT16/FAT32 read-only layer.**~~ Done: BPB validation, cluster
+   chains, directory traversal, `open`/`read`, and directory listing.
+6. ~~**`brash` and the manners gate.**~~ Done: a cwd-aware prompt that gets
+   more upset with each error, `please` normally, `sorry` after an error, exact
+   error strings, `cd`/`ls`/`cat`, and no compound statements.
 7. **Write support and loadable modules.** Only after the read path is stable.
 
 Each step should keep the serial log and screenshot checks working so
@@ -581,18 +623,19 @@ A few decisions are worth recording because they are easy to undo by accident.
   consumes two rows if it is followed by `\n`. The panic rules are 79 columns
   for that reason. Keep the panic screen at or below 24 printed rows so the
   final newline does not scroll the banner away.
-- **The keyboard is polling-only on purpose.** The PIC is not remapped, so
-  `keyboard_init()` drains whatever the firmware left in the 8042 output buffer
-  and `brash` spins on `keyboard_poll()`. The idle loop uses `pause`, not `hlt`;
-  `hlt` without a wake-up interrupt would hang the machine. Replace the polling
-  loop when IRQ 1 is wired up.
+- **The keyboard decodes in the reader, not the IRQ.** IRQ 1 only buffers raw
+  scancodes; `keyboard_read_char()` decodes them in the shell's context so the
+  modifier state is not shared across contexts. The reader still spins with
+  `pause` while the buffer is empty, so an idle shell keeps the CPU warm. A
+  `hlt`-based idle loop would need the IRQ to wake it.
 - **Scancode set 1 is assumed.** That is what the 8042 translation mode produces
   on the target machines. If translation is disabled later, the key tables in
   `src/keyboard.c` must change.
-- **The manners gate is a debt, not an alternating turn.** `apology_due` is set
-  by every error and cleared only by a successful command. `sorry` with no debt
-  is itself an error. Do not replace this with a two-state please/sorry toggle;
-  that changes the intended behaviour.
+- **The manners gate is a debt, not an alternating turn.** `apology_debt` grows
+  with every error (capped at 3 for the prompt) and is cleared only by a
+  successful command. `sorry` with no debt is itself an error. Do not replace
+  this with a two-state please/sorry toggle; that changes the intended
+  behaviour.
 - **Compound detection runs before tokenising.** The raw line is scanned for
   `; & | < > ( )` and backticks, so redirection or chaining cannot hide inside a
   token. Adding a quoting layer later means revisiting that scan.

@@ -10,15 +10,25 @@ And it clicked. I got home and got to work.
 
 ## brash
 
-`brash` is the Asbestos SHell. Its prompt is always `usr@brash>`.
+`brash` is the Asbestos SHell. Its prompt shows the current directory, with `~`
+standing for the FAT root:
 
-Prefix a command with `please`. Any error creates an apology debt: the next
+```text
+usr@brash:~>
+usr@brash:~/SUBDIR>
+```
+
+Errors make it progressively more upset: `usr@brash(hurt feelings):~/...>`,
+then `usr@brash(visibly upset):~/...>`, then `usr@brash(deeply offended):~/...>`
+until you apologise.
+
+Prefix a command with `please`. Every error adds to an apology debt: the next
 command must start with `sorry`. A successful command clears the debt. Compound
 statements are rejected outright.
 
-Built-ins are `help`, `about`, `echo`, `clear`, `halt`, `panic`, and `reboot`.
-The full manners rules and the current error strings are documented in
-[docs/DOCS.md](docs/DOCS.md).
+Built-ins are `help`, `about`, `uname`, `echo`, `clear`, `cd`, `ls`, `cat`,
+`halt`, `panic`, and `reboot`. The full manners rules and the current error
+strings are documented in [docs/DOCS.md](docs/DOCS.md).
 
 ## Quick start
 
@@ -52,10 +62,10 @@ Debian/Ubuntu), `ld`, `objcopy`, `python3`, and optionally `qemu-system-i386`
 - **Serial diagnostics** — COM1 output for headless boot verification
 - **IDT and panic screen** — 256 exception stubs, a C dispatcher, and an
   oops-style report with a `PANIC` banner and register dump
-- **Polled PS/2 keyboard** — scancode set 1, modifier tracking, and a small line
-  editor
-- **`brash`** — a fixed-prompt shell with built-ins and a `please` / `sorry`
-  manners gate
+- **IRQ-driven PS/2 keyboard** — scancode set 1, modifier tracking, and a small
+  line editor
+- **`brash`** — a shell with a cwd-aware prompt, built-ins, and a `please` /
+  `sorry` manners gate
 - **Terminus bitmap font** — 8×16 glyphs for ASCII `0x20`–`0x7E`,
   rasterised from Terminus Bold 16px and licensed under the SIL OFL 1.1
   *I like Terminus.*
@@ -109,12 +119,11 @@ Debian/Ubuntu), `ld`, `objcopy`, `python3`, and optionally `qemu-system-i386`
 ## Roadmap
 
 1. ~~IDT and exception handling~~ — done
-2. PIC remap and PIT
-3. PS/2 keyboard driver — polled first pass done; IRQ-driven input later
-4. ATA PIO driver
-5. FAT16/FAT32 read-only filesystem
-6. **`brash`** — the Asbestos SHell — first iteration done; grow it once there is
-   a filesystem
+2. ~~PIC remap and PIT~~ — done
+3. ~~PS/2 keyboard driver~~ — done, IRQ-driven
+4. ~~ATA PIO driver~~ — done, with an embedded FAT12 fallback
+5. ~~FAT12/FAT16/FAT32 read-only filesystem~~ — done
+6. ~~**`brash`** — the Asbestos SHell~~ — cwd-aware prompt and `cd`/`ls`/`cat`
 7. Write support and loadable modules
 
 ## License
