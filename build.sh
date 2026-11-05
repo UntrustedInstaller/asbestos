@@ -118,8 +118,29 @@ echo "[*] Assembling raw disk image..."
 # Image layout:
 #   LBA 0:       mbr.bin       (512 bytes)  MBR + Stage 1 boot code
 #   LBA 1..8:    stage2.bin    (4096 bytes)
-#   LBA 9+:      kernel.hdr    (128 KiB)
+#   LBA 9..264:  kernel.hdr    (128 KiB)
+#   LBA 265+:    FAT32 partition with example files
 cat "$OUT/mbr.bin" "$OUT/stage2.bin" "$OUT/kernel.hdr" > "$OUT/os.img"
+
+# Build a FAT32 partition with example files for the FAT driver to find.
+FAT_IMG="$OUT/fat_part.img"
+mkfs.fat -C -F 32 "$FAT_IMG" 4096 >/dev/null 2>&1
+
+# Create example files and copy them onto the FAT image via mtools.
+TMP_FAT=$(mktemp -d)
+echo "HELLO WORLD" > "$TMP_FAT/HELLO.TXT"
+echo "This is a test file for the brash shell FAT driver." > "$TMP_FAT/README.TXT"
+mkdir -p "$TMP_FAT/SUBDIR"
+echo "nested file content" > "$TMP_FAT/SUBDIR/NESTED.TXT"
+mcopy -i "$FAT_IMG" "$TMP_FAT/HELLO.TXT" "$TMP_FAT/README.TXT" ::
+mmd -i "$FAT_IMG" ::SUBDIR 2>/dev/null
+mcopy -i "$FAT_IMG" "$TMP_FAT/SUBDIR/NESTED.TXT" ::SUBDIR/ 2>/dev/null
+rm -rf "$TMP_FAT"
+
+# Append the FAT32 partition to the disk image at LBA 265.
+cat "$FAT_IMG" >> "$OUT/os.img"
+rm -f "$FAT_IMG"
+
 truncate -s 4M "$OUT/os.img"
 
 echo "[+] Build complete: $OUT/os.img"
