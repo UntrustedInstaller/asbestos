@@ -262,6 +262,7 @@ static void command_help(void) {
     console_puts("  echo <text>    print text\n");
     console_puts("  clear          clear the screen\n");
     console_puts("  cd [dir]       change directory\n");
+    console_puts("  pwd            print current directory\n");
     console_puts("  ls [-l] [dir]  list directory contents\n");
     console_puts("  cat <file>...  display file contents\n");
     console_puts("  halt           stop the machine\n");
@@ -328,6 +329,14 @@ static int command_cd(int argc, char *argv[]) {
     }
     cwd[i] = '\0';
     return 0;
+}
+
+static void command_pwd(void) {
+    console_putc('/');
+    if (cwd[0]) {
+        console_puts(cwd);
+    }
+    console_putc('\n');
 }
 
 static int command_ls(int argc, char *argv[]) {
@@ -537,6 +546,8 @@ static void dispatch(char *text) {
         console_clear();
     } else if (strcmp(command, "cd") == 0) {
         result = command_cd(argc, argv);
+    } else if (strcmp(command, "pwd") == 0) {
+        command_pwd();
     } else if (strcmp(command, "ls") == 0) {
         result = command_ls(argc, argv);
     } else if (strcmp(command, "cat") == 0) {
