@@ -200,14 +200,17 @@ To verify the working directory and path resolution:
 
 ```bash
 type_keys p l e a s e spc c d spc s u b d i r ret
-type_keys p l e a s e spc l s ret
+type_keys p l e a s e spc p w d ret
+type_keys p l e a s e spc l s spc -a ret
 type_keys p l e a s e spc c a t spc n e s t e d dot t x t ret
 type_keys p l e a s e spc c d spc dot dot ret
+type_keys p l e a s e spc p w d ret
 ```
 
-After the first line the prompt should read `usr@brash:~/subdir>`, `ls` should
-list `NESTED.TXT`, `cat` should print `nested file content`, and `cd ..` should
-return the prompt to `usr@brash:~>`. A missing directory or file adds to the
+After the first line the prompt should read `usr@brash:~/subdir>`, `pwd` should
+print `/subdir`, `ls -a` should list `.`, `..`, and `NESTED.TXT`, `cat` should
+print `nested file content`, and `cd ..` followed by `pwd` should return to
+`/` with the prompt at `usr@brash:~>`. A missing directory or file adds to the
 apology debt and upsets the prompt.
 
 ## Testing the panic screen

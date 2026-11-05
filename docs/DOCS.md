@@ -439,7 +439,8 @@ The first iteration is built-in only:
 | `echo <text>` | Print the remaining arguments, separated by single spaces |
 | `clear` | Clear the console |
 | `cd [dir]` | Change directory; no argument returns to the root |
-| `ls [-l] [dir]` | List a directory, relative to the current directory by default |
+| `pwd` | Print the current directory (`/` or `/SUBDIR`) |
+| `ls [-l] [-a] [dir]` | List a directory, relative to the current directory by default; `-a` shows `.` and `..` |
 | `cat <file>...` | Print one or more files, relative to the current directory |
 | `halt` | Stop the machine |
 | `panic` | Force a divide error and enter the panic screen |
@@ -473,7 +474,8 @@ Commands
   echo <text>    print text
   clear          clear the screen
   cd [dir]       change directory
-  ls [-l] [dir]  list directory contents
+  pwd            print current directory
+  ls [-l] [-a] [dir]  list directory contents
   cat <file>...  display file contents
   halt           stop the machine
   panic          force a CPU fault
@@ -485,9 +487,16 @@ Each error upsets the prompt more. Apologise to calm it down.
 usr@brash:~> please echo hi
 hi
 usr@brash:~> please cd subdir
+usr@brash:~/subdir> please pwd
+/subdir
+usr@brash:~/subdir> please ls -a
+.  <DIR>
+..  <DIR>
+NESTED.TXT
 usr@brash:~/subdir> please cat nested.txt
 nested file content
-usr@brash:~/subdir>
+usr@brash:~/subdir> please pwd
+/subdir
 ```
 
 Each entered line is mirrored to COM1 as `brash: <line>`, which makes headless
