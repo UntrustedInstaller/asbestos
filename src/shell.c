@@ -5,6 +5,7 @@
 #include "panic.h"
 #include "serial.h"
 #include "string.h"
+#include "fat.h"
 
 /*
  * brash: the Asbestos SHell.
@@ -135,6 +136,8 @@ static void command_help(void) {
     console_puts("  about          identify this shell\n");
     console_puts("  echo <text>    print text\n");
     console_puts("  clear          clear the screen\n");
+    console_puts("  ls [dir]       list directory contents\n");
+    console_puts("  cat <file>     display file contents\n");
     console_puts("  halt           stop the machine\n");
     console_puts("  panic          force a CPU fault\n");
     console_puts("  reboot         reboot the machine\n");
@@ -145,6 +148,7 @@ static void command_help(void) {
 
 static void command_about(void) {
     console_puts("Brash " SHELL_VERSION " - the Asbestos SHell.\n");
+    console_puts("Use your manners.\n");
 }
 
 static void command_echo(int argc, char *argv[]) {
@@ -155,6 +159,52 @@ static void command_echo(int argc, char *argv[]) {
         console_puts(argv[i]);
     }
     console_putc('\n');
+}
+
+static void command_ls(int argc, char *argv[]) {
+    const char *path = (argc > 2) ? argv[2] : "";
+    fat_list_dir(path);
+}
+
+static void command_cat(int argc, char *argv[]) {
+    if (argc < 3) {
+        console_puts("Usage: cat <file>\n");
+        return;
+    }
+
+    if (fat_open(argv[2]) != 0) {
+        console_puts("cat: cannot open ");
+        console_puts(argv[2]);
+        console_puts("\n");
+        return;
+    }
+
+    int32_t size = fat_size();
+    if (size < 0) {
+        console_puts("cat: cannot read size\n");
+        fat_close();
+        return;
+    }
+
+    char buf[256];
+    int32_t total = 0;
+    while (total < size) {
+        uint32_t want = (uint32_t)(size - total);
+        if (want > (uint32_t)sizeof(buf)) {
+            want = (uint32_t)sizeof(buf);
+        }
+        int32_t n = fat_read(buf, want);
+        if (n <= 0) {
+            break;
+        }
+        for (int32_t i = 0; i < n; i++) {
+            console_putc(buf[i]);
+        }
+        total += n;
+    }
+    console_putc('\n');
+
+    fat_close();
 }
 
 static void command_halt(void) {
@@ -255,6 +305,10 @@ static void dispatch(char *text) {
         command_echo(argc, argv);
     } else if (strcmp(command, "clear") == 0) {
         console_clear();
+    } else if (strcmp(command, "ls") == 0) {
+        command_ls(argc, argv);
+    } else if (strcmp(command, "cat") == 0) {
+        command_cat(argc, argv);
     } else if (strcmp(command, "halt") == 0) {
         command_halt();
     } else if (strcmp(command, "panic") == 0) {
@@ -273,8 +327,6 @@ static void dispatch(char *text) {
 }
 
 void shell_run(void) {
-    console_puts("\nbrash " SHELL_VERSION " - the Asbestos SHell\n");
-    console_puts("Use your manners.\n");
 
     for (;;) {
         console_puts("usr@brash> ");
