@@ -38,7 +38,8 @@ void fat_close(void);
 int fat_is_open(void);
 
 /* List all entries in a directory. Path uses forward slashes, e.g. "SUBDIR".
- * An empty path lists the root directory. */
-void fat_list_dir(const char *path);
+ * An empty path lists the root directory. If long_format is non-zero, print
+ * entry sizes (Unix `ls -l` style). */
+void fat_list_dir(const char *path, int long_format);
 
 #endif
