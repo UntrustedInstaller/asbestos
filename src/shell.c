@@ -134,10 +134,11 @@ static void command_help(void) {
     console_puts("Commands\n");
     console_puts("  help           show this list\n");
     console_puts("  about          identify this shell\n");
+    console_puts("  uname          print OS name and version\n");
     console_puts("  echo <text>    print text\n");
     console_puts("  clear          clear the screen\n");
-    console_puts("  ls [dir]       list directory contents\n");
-    console_puts("  cat <file>     display file contents\n");
+    console_puts("  ls [-l] [dir]  list directory contents\n");
+    console_puts("  cat <file>...  display file contents\n");
     console_puts("  halt           stop the machine\n");
     console_puts("  panic          force a CPU fault\n");
     console_puts("  reboot         reboot the machine\n");
@@ -151,6 +152,20 @@ static void command_about(void) {
     console_puts("Use your manners.\n");
 }
 
+static void command_uname(int argc, char *argv[]) {
+    int all = 0;
+    for (int i = 2; i < argc; i++) {
+        if (strcmp(argv[i], "-a") == 0) {
+            all = 1;
+        }
+    }
+    if (all) {
+        console_puts("asbestOS brash " SHELL_VERSION " i386\n");
+    } else {
+        console_puts("asbestOS\n");
+    }
+}
+
 static void command_echo(int argc, char *argv[]) {
     for (int i = 2; i < argc; i++) {
         if (i > 2) {
@@ -162,49 +177,60 @@ static void command_echo(int argc, char *argv[]) {
 }
 
 static void command_ls(int argc, char *argv[]) {
-    const char *path = (argc > 2) ? argv[2] : "";
-    fat_list_dir(path);
+    int long_format = 0;
+    const char *path = "";
+    for (int i = 2; i < argc; i++) {
+        if (strcmp(argv[i], "-l") == 0) {
+            long_format = 1;
+        } else {
+            path = argv[i];
+        }
+    }
+    fat_list_dir(path, long_format);
 }
 
 static void command_cat(int argc, char *argv[]) {
     if (argc < 3) {
-        console_puts("Usage: cat <file>\n");
+        console_puts("Usage: cat <file>...\n");
         return;
     }
 
-    if (fat_open(argv[2]) != 0) {
-        console_puts("cat: cannot open ");
-        console_puts(argv[2]);
-        console_puts("\n");
-        return;
-    }
+    for (int f = 2; f < argc; f++) {
+        if (fat_open(argv[f]) != 0) {
+            console_puts("cat: ");
+            console_puts(argv[f]);
+            console_puts(": No such file or directory\n");
+            continue;
+        }
 
-    int32_t size = fat_size();
-    if (size < 0) {
-        console_puts("cat: cannot read size\n");
+        int32_t size = fat_size();
+        if (size < 0) {
+            console_puts("cat: ");
+            console_puts(argv[f]);
+            console_puts(": Cannot read size\n");
+            fat_close();
+            continue;
+        }
+
+        char buf[256];
+        int32_t total = 0;
+        while (total < size) {
+            uint32_t want = (uint32_t)(size - total);
+            if (want > (uint32_t)sizeof(buf)) {
+                want = (uint32_t)sizeof(buf);
+            }
+            int32_t n = fat_read(buf, want);
+            if (n <= 0) {
+                break;
+            }
+            for (int32_t i = 0; i < n; i++) {
+                console_putc(buf[i]);
+            }
+            total += n;
+        }
+
         fat_close();
-        return;
     }
-
-    char buf[256];
-    int32_t total = 0;
-    while (total < size) {
-        uint32_t want = (uint32_t)(size - total);
-        if (want > (uint32_t)sizeof(buf)) {
-            want = (uint32_t)sizeof(buf);
-        }
-        int32_t n = fat_read(buf, want);
-        if (n <= 0) {
-            break;
-        }
-        for (int32_t i = 0; i < n; i++) {
-            console_putc(buf[i]);
-        }
-        total += n;
-    }
-    console_putc('\n');
-
-    fat_close();
 }
 
 static void command_halt(void) {
@@ -301,6 +327,8 @@ static void dispatch(char *text) {
         command_help();
     } else if (strcmp(command, "about") == 0) {
         command_about();
+    } else if (strcmp(command, "uname") == 0) {
+        command_uname(argc, argv);
     } else if (strcmp(command, "echo") == 0) {
         command_echo(argc, argv);
     } else if (strcmp(command, "clear") == 0) {
