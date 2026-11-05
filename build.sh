@@ -2,10 +2,14 @@
 # =====================================================================
 #  asbestOS
 # =====================================================================
-# Produces build/os.img, a raw ATA disk image containing:
-#   LBA 0       Stage 1 boot sector
-#   LBA 1..8    Stage 2 loader (8 sectors, padded)
-#   LBA 9..264  kernel image (128 KiB max, 4-byte size header + binary)
+# Produces build/os.img, a raw ATA disk image with an MBR partition table:
+#   LBA 0        MBR
+#   LBA 1        Stage 1 boot sector (partition boot sector)
+#   LBA 2..9     Stage 2 loader (8 sectors, padded)
+#   LBA 10..273  kernel image (128 KiB max, 4-byte size header + binary)
+#
+# To build the legacy floppy-style image (no MBR), set PART_OFFSET=0:
+#   PART_OFFSET=0 ./build.sh
 #
 # Run with QEMU:
 #   qemu-system-i386 -drive file=build/os.img,format=raw,if=ide \
@@ -24,17 +28,25 @@ STAGE2_SECTORS=8
 KERNEL_BYTES=$((128 * 1024))
 KERNEL_MAX=$((KERNEL_BYTES - 4))
 
+# Partition offset: 0 = MBR is Stage 1 (boot code at LBA 0).
+#                   1 = MBR at LBA 0, partition at LBA 1 (not used).
+PART_OFFSET=0
+# Partition size in sectors (must cover Stage 2 + kernel region).
+PART_SECTORS=$((STAGE2_SECTORS + 256))
+
 mkdir -p "$OUT"
 
 echo "=============================================="
 echo "               ASBESTOS BUILDER               "  
 echo "=============================================="
 
-echo "[*] Assembling Stage 1 (src/boot.asm)..."
-nasm -f bin src/boot.asm -o "$OUT/boot.bin"
+echo "[*] Assembling MBR + Stage 1 (src/mbr.asm)..."
+nasm -f bin -dPART_OFFSET=$PART_OFFSET -dPART_SECTORS=$PART_SECTORS \
+    src/mbr.asm -o "$OUT/mbr.bin"
 
 echo "[*] Assembling Stage 2 (src/stage2.asm)..."
-nasm -f bin src/stage2.asm -o "$OUT/stage2.raw.bin"
+nasm -f bin -dPART_OFFSET=$PART_OFFSET \
+    src/stage2.asm -o "$OUT/stage2.raw.bin"
 
 STAGE2_SIZE=$(stat -c%s "$OUT/stage2.raw.bin")
 STAGE2_MAX=$((STAGE2_SECTORS * 512))
@@ -57,7 +69,7 @@ CFLAGS="-m32 -march=i386 -mtune=i386 -ffreestanding -fno-builtin \
         -fno-asynchronous-unwind-tables -fno-unwind-tables \
         -nostdlib -O2 -Wall -Wextra -Isrc"
 
-for src in kernel console string serial idt panic keyboard shell ata_pio pic pit; do
+for src in kernel console string serial idt panic keyboard shell ata_pio pic pit fat; do
     echo "[*] Compiling src/${src}.c..."
     # shellcheck disable=SC2086
     gcc $CFLAGS -c "src/${src}.c" -o "$OUT/${src}.o"
@@ -78,6 +90,7 @@ ld -m elf_i386 -T src/linker32.ld \
     "$OUT/ata_pio.o" \
     "$OUT/pic.o" \
     "$OUT/pit.o" \
+    "$OUT/fat.o" \
     -o "$OUT/kernel.elf"
 
 objcopy -O binary -j .text -j .rodata -j .data "$OUT/kernel.elf" "$OUT/kernel.bin"
@@ -102,14 +115,18 @@ PY
 truncate -s "$KERNEL_BYTES" "$OUT/kernel.hdr"
 
 echo "[*] Assembling raw disk image..."
-cat "$OUT/boot.bin" "$OUT/stage2.bin" "$OUT/kernel.hdr" > "$OUT/os.img"
+# Image layout:
+#   LBA 0:       mbr.bin       (512 bytes)  MBR + Stage 1 boot code
+#   LBA 1..8:    stage2.bin    (4096 bytes)
+#   LBA 9+:      kernel.hdr    (128 KiB)
+cat "$OUT/mbr.bin" "$OUT/stage2.bin" "$OUT/kernel.hdr" > "$OUT/os.img"
 truncate -s 4M "$OUT/os.img"
 
 echo "[+] Build complete: $OUT/os.img"
-echo "    Stage 1: 512 bytes"
-echo "    Stage 2: ${STAGE2_SIZE} bytes (padded to ${STAGE2_MAX})"
-echo "    Kernel:  ${KERNEL_SIZE} bytes (limit ${KERNEL_MAX})"
-echo "    Disk:    $(stat -c%s "$OUT/os.img") bytes"
+echo "    MBR+Stage1: 512 bytes"
+echo "    Stage 2:    ${STAGE2_SIZE} bytes (padded to ${STAGE2_MAX})"
+echo "    Kernel:     ${KERNEL_SIZE} bytes (limit ${KERNEL_MAX})"
+echo "    Disk:       $(stat -c%s "$OUT/os.img") bytes"
 
 if [ "${1:-}" = "--run" ]; then
     RUN_QEMU=1
