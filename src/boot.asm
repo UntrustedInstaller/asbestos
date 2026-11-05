@@ -4,10 +4,16 @@
 ; The BIOS enters here in 16-bit real mode. This sector does one job:
 ; load Stage 2 from LBA 1 into 0x0800:0x0000 and jump to it.
 ;
-; Disk layout expected by the 32-bit image:
+; Disk layout expected by the 32-bit image (PART_OFFSET=0, floppy style):
 ;   LBA 0        this boot sector
 ;   LBA 1..8     Stage 2 (8 sectors, padded)
 ;   LBA 9..264   kernel image (128 KiB, 4-byte size header + binary)
+;
+; With PART_OFFSET=1 (MBR/USB-HDD style):
+;   LBA 0        MBR
+;   LBA 1        this boot sector (partition boot sector)
+;   LBA 2..9     Stage 2
+;   LBA 10..     kernel image
 ;
 ; Only the boot path is 16-bit. Everything after protected-mode entry is
 ; 32-bit code.
@@ -16,7 +22,11 @@
 [org 0x7c00]
 bits 16
 
-STAGE2_LBA      equ 1
+%ifndef PART_OFFSET
+%define PART_OFFSET 0
+%endif
+
+STAGE2_LBA      equ 1 + PART_OFFSET
 STAGE2_SECTORS  equ 8
 STAGE2_SEG      equ 0x0800
 
