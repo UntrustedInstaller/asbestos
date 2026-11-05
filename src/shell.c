@@ -272,6 +272,8 @@ static void command_help(void) {
     console_puts("  tail <file> [n]  print last N bytes (default 256)\n");
     console_puts("  wc <file>        count bytes, words, and lines\n");
     console_puts("  grep <pat> <file>  search for a pattern in a file\n");
+    console_puts("  basename <path>  print the final component of a path\n");
+    console_puts("  dirname <path>   print the directory portion of a path\n");
     console_puts("  ls [-l] [-a] [dir]  list directory contents\n");
     console_puts("  cat <file>...  display file contents\n");
     console_puts("  halt           stop the machine\n");
@@ -711,6 +713,55 @@ static int command_grep(int argc, char *argv[]) {
     return 0;
 }
 
+static int command_basename(int argc, char *argv[]) {
+    if (argc < 3) {
+        console_puts("Usage: basename <path>\n");
+        return -1;
+    }
+
+    const char *p = argv[2];
+    const char *last_slash = 0;
+    for (const char *q = p; *q; q++) {
+        if (*q == '/') {
+            last_slash = q;
+        }
+    }
+
+    if (last_slash) {
+        console_puts(last_slash + 1);
+    } else {
+        console_puts(p);
+    }
+    console_putc('\n');
+    return 0;
+}
+
+static int command_dirname(int argc, char *argv[]) {
+    if (argc < 3) {
+        console_puts("Usage: dirname <path>\n");
+        return -1;
+    }
+
+    const char *p = argv[2];
+    const char *last_slash = 0;
+    for (const char *q = p; *q; q++) {
+        if (*q == '/') {
+            last_slash = q;
+        }
+    }
+
+    if (!last_slash) {
+        console_puts(".\n");
+        return 0;
+    }
+
+    for (const char *q = p; q < last_slash; q++) {
+        console_putc(*q);
+    }
+    console_putc('\n');
+    return 0;
+}
+
 static int command_cd(int argc, char *argv[]) {
     char path[SHELL_PATH_MAX];
 
@@ -985,6 +1036,10 @@ static void dispatch(char *text) {
         result = command_wc(argc, argv);
     } else if (strcmp(command, "grep") == 0) {
         result = command_grep(argc, argv);
+    } else if (strcmp(command, "basename") == 0) {
+        result = command_basename(argc, argv);
+    } else if (strcmp(command, "dirname") == 0) {
+        result = command_dirname(argc, argv);
     } else if (strcmp(command, "ls") == 0) {
         result = command_ls(argc, argv);
     } else if (strcmp(command, "cat") == 0) {
