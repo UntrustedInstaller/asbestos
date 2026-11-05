@@ -62,11 +62,11 @@
 #define ATA_SECTOR_WORDS (ATA_SECTOR_SIZE / 2)
 
 /* Returns 0 on success, -1 on error. */
-int ata_probe(uint16_t base, int drive);
-int ata_identify(uint16_t base, int drive, uint16_t *buf);
-int ata_read_sectors(uint16_t base, int drive, uint32_t lba,
+int ata_probe(int drive);
+int ata_identify(int drive, uint16_t *buf);
+int ata_read_sectors(int drive, uint32_t lba,
                      uint8_t count, void *buf);
-int ata_write_sectors(uint16_t base, int drive, uint32_t lba,
+int ata_write_sectors(int drive, uint32_t lba,
                       uint8_t count, const void *buf);
 
 #endif
