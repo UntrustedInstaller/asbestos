@@ -71,8 +71,10 @@ void kernel_main(void) {
         }
     }
 
-    /* Initialize FAT filesystem on the ATA disk. */
-    fat_set_boot_sector(274);
+    /* Initialize FAT filesystem on the ATA disk.
+     * The FAT32 partition starts at LBA 265 (right after the 128 KiB
+     * kernel header region, which ends at LBA 264). */
+    fat_set_boot_sector(265);
     if (fat_init() == 0) {
         serial_puts("fat: ready\n");
 
