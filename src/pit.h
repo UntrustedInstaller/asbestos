@@ -21,6 +21,7 @@
 #define PIT_BASE_FREQ 1193182u
 
 void pit_init(uint32_t frequency_hz);
+void pit_irq_handler(void);
 uint32_t pit_ticks_get(void);
 
 #endif
