@@ -12,13 +12,16 @@
  *
  * First iteration. Built-in commands only, no disk, no filesystem, and no
  * quoting. Commands are prefixed with "please". Any error puts the shell in a
- * state where the next command must be prefixed with "sorry". The prompt itself
- * is always "usr@brash> ".
+ * state where the next command must be prefixed with "sorry". The prompt makes
+ * that state obvious: its feelings are hurt until the apology arrives.
  *
  * These strings are the provisional contract. Keep them in one place so they
  * are easy to change when the exact wording is settled.
  */
 #define SHELL_VERSION "0.1"
+
+#define SHELL_PROMPT_HOST "usr@brash"
+#define SHELL_PROMPT_HURT "(hurt feelings)"
 
 #define SHELL_MANNERS_ERROR_PLEASE "That is not the magic word. Say \"please\"."
 #define SHELL_MANNERS_ERROR_SORRY "An apology would be nice. Say \"sorry\"."
@@ -33,7 +36,8 @@
 /*
  * Commands are prefixed with "please" under normal circumstances. Any error
  * sets apology_due, so the next command must be prefixed with "sorry". A
- * successful command clears it again. The prompt stays fixed either way.
+ * successful command clears it again. The prompt reflects the state, so the
+ * user can tell an apology is owed without triggering another error.
  */
 static int apology_due;
 static char line[SHELL_LINE_MAX];
@@ -48,6 +52,14 @@ static void note_error(void) {
 
 static void note_success(void) {
     apology_due = 0;
+}
+
+static void print_prompt(void) {
+    console_puts(SHELL_PROMPT_HOST);
+    if (apology_due) {
+        console_puts(SHELL_PROMPT_HURT);
+    }
+    console_puts("> ");
 }
 
 static int is_space(char c) {
@@ -145,6 +157,7 @@ static void command_help(void) {
     console_puts("\n");
     console_puts("Prefix a command with \"please\".\n");
     console_puts("After an error, apologise with \"sorry\".\n");
+    console_puts("A hurt prompt means an apology is due.\n");
 }
 
 static void command_about(void) {
@@ -357,7 +370,7 @@ static void dispatch(char *text) {
 void shell_run(void) {
 
     for (;;) {
-        console_puts("usr@brash> ");
+        print_prompt();
 
         read_line(line, sizeof(line));
 
