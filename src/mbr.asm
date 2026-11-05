@@ -10,6 +10,7 @@
 ;   LBA 0        MBR (Stage 1 boot code + partition table + signature)
 ;   LBA 1..8     Stage 2 loader (8 sectors, padded)
 ;   LBA 9..264   kernel image (128 KiB max, 4-byte size header + binary)
+;   LBA 265..    FAT12 partition (also embedded in the kernel)
 ; =====================================================================
 
 [org 0x7c00]
@@ -18,6 +19,18 @@ bits 16
 STAGE2_LBA      equ 1
 STAGE2_SECTORS  equ 8
 STAGE2_SEG      equ 0x0800
+
+; The partition table describes the FAT partition, which lives after the
+; kernel region. build.sh passes the real values.
+%ifndef FAT_LBA
+%define FAT_LBA 265
+%endif
+%ifndef FAT_SECTORS
+%define FAT_SECTORS 128
+%endif
+%ifndef FAT_TYPE
+%define FAT_TYPE 0x01
+%endif
 
 start:
     cli
@@ -100,11 +113,11 @@ times 446 - ($ - $$) db 0
 ;  Partition table entry 1 (16 bytes at offset 0x1BE)
 ; ---------------------------------------------------------------------
     db 0x80                              ; boot flag: bootable
-    db 0, 2, 0                           ; CHS start: head=0, sector=2, cyl=0
-    db 0x0C                              ; type: FAT32 LBA
-    db 0xFF, 0xFF, 0xFF                  ; CHS end: max
-    dd 1                                 ; LBA start: Stage 2 begins here
-    dd 263                               ; sector count: Stage 2 + kernel
+    db 0xFE, 0xFF, 0xFF                  ; CHS start: max (LBA is authoritative)
+    db FAT_TYPE                          ; type: FAT12 (0x01)
+    db 0xFE, 0xFF, 0xFF                  ; CHS end: max
+    dd FAT_LBA                           ; LBA start of the FAT partition
+    dd FAT_SECTORS                       ; sector count of the FAT partition
 
 ; ---------------------------------------------------------------------
 ;  Partition table entries 2-4 (empty, 48 bytes)

@@ -11,6 +11,10 @@
 #include "ata_pio.h"
 #include "fat.h"
 
+/* Embedded FAT image, linked in by build.sh via objcopy. */
+extern const uint8_t _binary_build_fat_part_img_start[];
+extern const uint8_t _binary_build_fat_part_img_end[];
+
 static void fail(const char *message) {
     panic(message, 0);
 }
@@ -71,15 +75,40 @@ void kernel_main(void) {
         }
     }
 
-    /* Initialize FAT filesystem on the ATA disk.
-     * The FAT32 partition starts at LBA 265 (right after the 128 KiB
-     * kernel header region, which ends at LBA 264). */
-    fat_set_boot_sector(265);
-    if (fat_init() == 0) {
-        serial_puts("fat: ready\n");
+    /*
+     * Initialize the FAT filesystem.
+     *
+     * Try the on-disk copy first: the FAT partition starts at LBA 265,
+     * right after the 128 KiB kernel region. If that is missing or does
+     * not contain the expected files (for example when booting from USB,
+     * where the kernel cannot reach the boot medium through ATA), fall
+     * back to the FAT image embedded in the kernel.
+     */
+    {
+        int fat_ready = 0;
 
-        /* Test: open and read a file from FAT */
-        {
+        fat_set_boot_sector(265);
+        if (fat_init() == 0 && fat_open("HELLO.TXT") == 0) {
+            fat_close();
+            fat_ready = 1;
+        } else {
+            serial_puts("fat: disk image unavailable, using embedded image\n");
+            fat_close();
+
+            fat_set_memdisk(_binary_build_fat_part_img_start,
+                            (uint32_t)(_binary_build_fat_part_img_end -
+                                       _binary_build_fat_part_img_start));
+            fat_set_boot_sector(0);
+
+            if (fat_init() == 0) {
+                fat_ready = 1;
+            }
+        }
+
+        if (fat_ready) {
+            serial_puts("fat: ready\n");
+
+            /* Test: open and read a file from FAT */
             char buf[64];
             if (fat_open("HELLO.TXT") == 0) {
                 serial_puts("fat: opened HELLO.TXT\n");
@@ -97,9 +126,9 @@ void kernel_main(void) {
             } else {
                 serial_puts("fat: failed to open HELLO.TXT\n");
             }
+        } else {
+            serial_puts("fat: init failed\n");
         }
-    } else {
-        serial_puts("fat: init failed\n");
     }
 
     shell_run();
