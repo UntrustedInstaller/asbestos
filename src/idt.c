@@ -1,4 +1,5 @@
 #include "idt.h"
+#include "console.h"
 #include "io.h"
 #include "keyboard.h"
 #include "panic.h"
@@ -90,7 +91,11 @@ void isr_dispatch(struct trap_frame *frame) {
     if (frame->vector < 48u) {
         uint8_t irq = (uint8_t)(frame->vector - 32u);
 
-        if (irq == IRQ_KEYBOARD) {
+        if (irq == IRQ_TIMER) {
+            pit_irq_handler();
+            console_tick();
+            pic_eoi(irq);
+        } else if (irq == IRQ_KEYBOARD) {
             keyboard_irq_handler();
         } else {
             pic_eoi(irq);
