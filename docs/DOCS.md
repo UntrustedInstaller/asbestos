@@ -442,6 +442,16 @@ The first iteration is built-in only:
 | `pwd` | Print the current directory (`/` or `/SUBDIR`) |
 | `ls [-l] [-a] [dir]` | List a directory, relative to the current directory by default; `-a` shows `.` and `..` |
 | `cat <file>...` | Print one or more files, relative to the current directory |
+| `true` | Do nothing, successfully |
+| `false` | Do nothing, unsuccessfully |
+| `sleep <secs>` | Busy-wait for the given number of seconds |
+| `stat <file>` | Print file size in bytes |
+| `head <file> [n]` | Print the first N bytes (default 256) |
+| `tail <file> [n]` | Print the last N bytes (default 256) |
+| `wc <file>` | Count bytes, words, and lines |
+| `grep <pat> <file>` | Search for a pattern in a file |
+| `basename <path>` | Print the final component of a path |
+| `dirname <path>` | Print the directory portion of a path |
 | `halt` | Stop the machine |
 | `panic` | Force a divide error and enter the panic screen |
 | `reboot` | Reset the machine |

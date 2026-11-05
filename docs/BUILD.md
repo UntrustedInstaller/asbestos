@@ -203,15 +203,27 @@ type_keys p l e a s e spc c d spc s u b d i r ret
 type_keys p l e a s e spc p w d ret
 type_keys p l e a s e spc l s spc -a ret
 type_keys p l e a s e spc c a t spc n e s t e d dot t x t ret
+type_keys p l e a s e spc s t a t spc n e s t e d dot t x t ret
 type_keys p l e a s e spc c d spc dot dot ret
 type_keys p l e a s e spc p w d ret
 ```
 
 After the first line the prompt should read `usr@brash:~/subdir>`, `pwd` should
 print `/subdir`, `ls -a` should list `.`, `..`, and `NESTED.TXT`, `cat` should
-print `nested file content`, and `cd ..` followed by `pwd` should return to
-`/` with the prompt at `usr@brash:~>`. A missing directory or file adds to the
-apology debt and upsets the prompt.
+print `nested file content`, `stat` should print the file size, and `cd ..`
+followed by `pwd` should return to `/` with the prompt at `usr@brash:~>`. A
+missing directory or file adds to the apology debt and upsets the prompt.
+
+To verify the manners gate with `true`/`false`:
+
+```bash
+type_keys p l e a s e spc t r u e ret            # succeeds, prompt stays normal
+type_keys p l e a s e spc f a l s e ret          # fails, prompt becomes hurt
+type_keys s o r r y spc t r u e ret              # apology accepted, prompt normal
+```
+
+`false` leaves the prompt at `usr@brash(hurt feelings):~>`; `sorry true`
+restores it to `usr@brash:~>`.
 
 ## Testing the panic screen
 

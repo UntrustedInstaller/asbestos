@@ -26,9 +26,10 @@ Prefix a command with `please`. Every error adds to an apology debt: the next
 command must start with `sorry`. A successful command clears the debt. Compound
 statements are rejected outright.
 
-Built-ins are `help`, `about`, `uname`, `echo`, `clear`, `cd`, `pwd`, `ls`,
-`cat`, `halt`, `panic`, and `reboot`. The full manners rules and the current
-error strings are documented in [docs/DOCS.md](docs/DOCS.md).
+Built-ins are `help`, `about`, `uname`, `echo`, `clear`, `cd`, `pwd`, `true`,
+`false`, `sleep`, `stat`, `head`, `tail`, `wc`, `grep`, `basename`, `dirname`,
+`ls`, `cat`, `halt`, `panic`, and `reboot`. The full manners rules and the
+current error strings are documented in [docs/DOCS.md](docs/DOCS.md).
 
 ## Quick start
 
