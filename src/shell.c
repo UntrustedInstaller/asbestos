@@ -2,6 +2,7 @@
 #include "console.h"
 #include "io.h"
 #include "keyboard.h"
+#include "pit.h"
 #include "panic.h"
 #include "serial.h"
 #include "string.h"
@@ -265,6 +266,7 @@ static void command_help(void) {
     console_puts("  pwd            print current directory\n");
     console_puts("  true           do nothing, successfully\n");
     console_puts("  false          do nothing, unsuccessfully\n");
+    console_puts("  sleep <secs>   busy-wait for the given seconds\n");
     console_puts("  ls [-l] [-a] [dir]  list directory contents\n");
     console_puts("  cat <file>...  display file contents\n");
     console_puts("  halt           stop the machine\n");
@@ -315,6 +317,33 @@ static int command_false(int argc, char *argv[]) {
     (void)argc;
     (void)argv;
     return -1;
+}
+
+static int command_sleep(int argc, char *argv[]) {
+    if (argc < 3) {
+        console_puts("Usage: sleep <secs>\n");
+        return -1;
+    }
+
+    uint32_t secs = 0;
+    for (const char *p = argv[2]; *p; p++) {
+        if (*p < '0' || *p > '9') {
+            console_puts("sleep: invalid number\n");
+            return -1;
+        }
+        secs = secs * 10u + (uint32_t)(*p - '0');
+    }
+
+    uint32_t start = pit_ticks_get();
+    uint32_t target = start + secs * 100u;  /* PIT runs at 100 Hz */
+    if (target < start) {
+        target = 0xFFFFFFFFu;  /* overflow: wait effectively forever */
+    }
+    while (pit_ticks_get() < target) {
+        cpu_pause();
+    }
+
+    return 0;
 }
 
 static int command_cd(int argc, char *argv[]) {
@@ -579,6 +608,8 @@ static void dispatch(char *text) {
         result = command_true(argc, argv);
     } else if (strcmp(command, "false") == 0) {
         result = command_false(argc, argv);
+    } else if (strcmp(command, "sleep") == 0) {
+        result = command_sleep(argc, argv);
     } else if (strcmp(command, "ls") == 0) {
         result = command_ls(argc, argv);
     } else if (strcmp(command, "cat") == 0) {
