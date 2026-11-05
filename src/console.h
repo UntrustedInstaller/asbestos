@@ -21,4 +21,7 @@ void console_puts(const char *s);
 void console_put_hex32(uint32_t value);
 void console_put_dec(uint32_t value);
 
+/* Advance the cursor blink timer. Call once per PIT tick (IRQ 0). */
+void console_tick(void);
+
 #endif
