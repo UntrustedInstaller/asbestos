@@ -23,6 +23,10 @@
 
 #define SHELL_PROMPT_HOST "usr@brash"
 #define SHELL_PROMPT_HURT "(hurt feelings)"
+#define SHELL_PROMPT_UPSET "(visibly upset)"
+#define SHELL_PROMPT_OFFENDED "(deeply offended)"
+
+#define SHELL_DEBT_MAX 3
 
 #define SHELL_PATH_MAX 64
 
@@ -37,33 +41,41 @@
 #define SHELL_MAX_ARGS 8
 
 /*
- * Commands are prefixed with "please" under normal circumstances. Any error
- * sets apology_due, so the next command must be prefixed with "sorry". A
- * successful command clears it again. The prompt reflects the state, so the
- * user can tell an apology is owed without triggering another error.
+ * Commands are prefixed with "please" under normal circumstances. Every error
+ * adds to apology_debt, so the next command must be prefixed with "sorry". A
+ * successful command clears the debt. The prompt gets more upset as the debt
+ * grows, so the user can tell an apology is owed without triggering another
+ * error.
  */
-static int apology_due;
+static int apology_debt;
 static char line[SHELL_LINE_MAX];
 
 /* Current directory relative to the FAT root ("" means root). */
 static char cwd[SHELL_PATH_MAX];
 
 static const char *required_word(void) {
-    return apology_due ? "sorry" : "please";
+    return apology_debt ? "sorry" : "please";
 }
 
 static void note_error(void) {
-    apology_due = 1;
+    if (apology_debt < SHELL_DEBT_MAX) {
+        apology_debt++;
+    }
 }
 
 static void note_success(void) {
-    apology_due = 0;
+    apology_debt = 0;
 }
 
 static void print_prompt(void) {
     console_puts(SHELL_PROMPT_HOST);
-    if (apology_due) {
+
+    if (apology_debt == 1) {
         console_puts(SHELL_PROMPT_HURT);
+    } else if (apology_debt == 2) {
+        console_puts(SHELL_PROMPT_UPSET);
+    } else if (apology_debt >= SHELL_DEBT_MAX) {
+        console_puts(SHELL_PROMPT_OFFENDED);
     }
 
     console_puts(":~");
@@ -258,7 +270,7 @@ static void command_help(void) {
     console_puts("\n");
     console_puts("Prefix a command with \"please\".\n");
     console_puts("After an error, apologise with \"sorry\".\n");
-    console_puts("A hurt prompt means an apology is due.\n");
+    console_puts("Each error upsets the prompt more. Apologise to calm it down.\n");
 }
 
 static void command_about(void) {
@@ -495,7 +507,7 @@ static void dispatch(char *text) {
     }
 
     if (strcmp(argv[0], required_word()) != 0) {
-        if (apology_due) {
+        if (apology_debt) {
             console_puts(SHELL_MANNERS_ERROR_SORRY "\n");
         } else {
             console_puts(SHELL_MANNERS_ERROR_PLEASE "\n");
