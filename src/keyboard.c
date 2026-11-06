@@ -175,11 +175,18 @@ char keyboard_read_char(void) {
 char keyboard_read_char_timeout(uint32_t timeout_ticks) {
     uint32_t start = pit_ticks_get();
 
-    while (!keyboard_scancode_available()) {
-        if (pit_ticks_get() - start >= timeout_ticks) {
-            return 0;
+    for (;;) {
+        while (!keyboard_scancode_available()) {
+            if (pit_ticks_get() - start >= timeout_ticks) {
+                return 0;
+            }
+            cpu_pause();
         }
-        cpu_pause();
+
+        char c = keyboard_poll();
+        if (c != 0) {
+            return c;
+        }
+        /* Key release or modifier change: keep waiting for a real character. */
     }
-    return keyboard_poll();
 }
