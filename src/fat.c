@@ -357,6 +357,181 @@ static int fat_free_cluster_chain(uint32_t cluster) {
     return 0;
 }
 
+static int parse_component(const char *path, char *out_name);
+static int scan_dir_for_name(uint32_t start_sector, uint32_t total_entries,
+                             const char *name_11, uint32_t *found_cluster,
+                             uint32_t *found_size, uint8_t *found_attr);
+static int scan_fat32_dir_chain(uint32_t start_cluster, const char *name_11,
+                                uint32_t *found_cluster, uint32_t *found_size,
+                                uint8_t *found_attr);
+static void write_dir_entry(uint8_t *ent, const char *name_11, uint8_t attr,
+                            uint32_t start_cluster);
+
+/* Create a directory entry at `path` with the given attributes and starting
+ * cluster. Walks all but the last path component to find the parent
+ * directory, then appends a new entry. FAT12/FAT16 only for now.
+ * Returns 0 on success, -1 on error. */
+int fat_create_dir_entry(const char *path, uint8_t attr,
+                         uint32_t start_cluster) {
+    char name_11[11];
+    int pos = 0;
+    uint32_t cur_cluster = 0;
+    int in_dir = 0;
+
+    /* Set starting directory */
+    if (is_fat32) {
+        uint8_t bs[512];
+        if (read_sector(fat_boot_sector, bs)) {
+            return -1;
+        }
+        cur_cluster = read_u32(&bs[FAT32_ROOT_CLUSTER]);
+    } else {
+        cur_cluster = 0;
+    }
+
+    /* Walk all but the last path component to reach the parent directory */
+    while (path[pos]) {
+        int consumed = parse_component(&path[pos], name_11);
+        int next_pos = pos + consumed;
+
+        /* Last component: this is the name to create */
+        if (path[next_pos] == '\0') {
+            break;
+        }
+
+        uint32_t found_cluster = 0;
+        uint32_t found_size = 0;
+        uint8_t found_attr = 0;
+        int found;
+
+        if (is_fat32 || !in_dir) {
+            found = scan_dir_for_name(root_dir_sector, root_dir_entries,
+                                      name_11, &found_cluster, &found_size,
+                                      &found_attr);
+            in_dir = 1;
+        } else {
+            found = scan_fat32_dir_chain(cur_cluster, name_11,
+                                         &found_cluster, &found_size,
+                                         &found_attr);
+        }
+
+        if (found != 0 || !(found_attr & ATTR_DIRECTORY)) {
+            return -1;  /* Parent not found or not a directory */
+        }
+
+        cur_cluster = found_cluster;
+        pos = next_pos;
+    }
+
+    /* Parse final component as the new entry name */
+    parse_component(&path[pos], name_11);
+
+    /* Check the name does not already exist in the parent */
+    {
+        uint32_t found_cluster = 0;
+        uint32_t found_size = 0;
+        uint8_t found_attr = 0;
+        int found;
+
+        if (is_fat32 || cur_cluster != 0) {
+            found = scan_fat32_dir_chain(cur_cluster, name_11,
+                                         &found_cluster, &found_size,
+                                         &found_attr);
+        } else {
+            found = scan_dir_for_name(root_dir_sector, root_dir_entries,
+                                      name_11, &found_cluster, &found_size,
+                                      &found_attr);
+        }
+
+        if (found == 0) {
+            return -1;  /* Entry already exists */
+        }
+    }
+
+    /* Scan the parent directory for a free slot (DIR_FREE or DIR_DELETED). */
+    if (!is_fat32 && cur_cluster == 0) {
+        /* FAT12/FAT16 root directory: linear region */
+        uint32_t sector;
+        for (sector = 0; sector < root_dir_size_sectors; sector++) {
+            uint32_t e;
+            if (read_sector(root_dir_sector + sector, sector_buf)) {
+                return -1;
+            }
+            for (e = 0; e < bytes_per_sector / DIR_ENTRY_SIZE; e++) {
+                uint8_t *ent = &sector_buf[e * DIR_ENTRY_SIZE];
+                if (ent[DIR_NAME] == DIR_FREE ||
+                    ent[DIR_NAME] == DIR_DELETED) {
+                    write_dir_entry(ent, name_11, attr, start_cluster);
+                    if (write_sector(root_dir_sector + sector, sector_buf)) {
+                        return -1;
+                    }
+                    return 0;
+                }
+            }
+        }
+        return -1;  /* Root directory full */
+    }
+
+    /* Subdirectory (or FAT32 root): cluster chain */
+    uint32_t cluster = cur_cluster;
+    while (cluster != 0xFFFFFFFFu) {
+        uint32_t lba = cluster_to_lba(cluster);
+        uint32_t entries_per_cluster =
+            sectors_per_cluster * (bytes_per_sector / DIR_ENTRY_SIZE);
+        uint32_t e;
+        for (e = 0; e < entries_per_cluster; e++) {
+            uint32_t sector_in_cluster =
+                lba + ((e * DIR_ENTRY_SIZE) / bytes_per_sector);
+            if (read_sector(sector_in_cluster, sector_buf)) {
+                return -1;
+            }
+            uint8_t *ent = &sector_buf[(e * DIR_ENTRY_SIZE) % bytes_per_sector];
+            if (ent[DIR_NAME] == DIR_FREE ||
+                ent[DIR_NAME] == DIR_DELETED) {
+                write_dir_entry(ent, name_11, attr, start_cluster);
+                if (write_sector(sector_in_cluster, sector_buf)) {
+                    return -1;
+                }
+                return 0;
+            }
+        }
+        cluster = fat_next_cluster(cluster);
+    }
+
+    return -1;  /* Directory full */
+}
+
+/* Write a 32-byte directory entry from an 11-byte padded name. */
+static void write_dir_entry(uint8_t *ent, const char *name_11, uint8_t attr,
+                            uint32_t start_cluster) {
+    uint32_t i;
+
+    /* Name (11 bytes) */
+    for (i = 0; i < 11; i++) {
+        ent[DIR_NAME + i] = (uint8_t)name_11[i];
+    }
+
+    /* Attributes */
+    ent[DIR_ATTR] = attr;
+
+    /* Zero reserved/unset fields */
+    for (i = 12; i <= 21; i++) {
+        ent[i] = 0;
+    }
+    for (i = 22; i <= 25; i++) {
+        ent[i] = 0;
+    }
+
+    ent[DIR_FST_CLUS_HI] = (uint8_t)((start_cluster >> 16) & 0xFFu);
+    ent[DIR_FST_CLUS_LO] = (uint8_t)(start_cluster & 0xFFu);
+
+    /* File size = 0 */
+    ent[DIR_FILE_SIZE + 0] = 0;
+    ent[DIR_FILE_SIZE + 1] = 0;
+    ent[DIR_FILE_SIZE + 2] = 0;
+    ent[DIR_FILE_SIZE + 3] = 0;
+}
+
 /* ------------------------------------------------------------------ */
 /*  Name helpers                                                      */
 /* ------------------------------------------------------------------ */

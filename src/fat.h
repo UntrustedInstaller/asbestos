@@ -54,4 +54,9 @@ int fat_list_dir(const char *path, int long_format);
  * root), 0 otherwise. */
 int fat_is_dir(const char *path);
 
+/* Create a directory entry at `path` with the given attributes and starting
+ * cluster. FAT12/FAT16 only. Returns 0 on success, -1 on error. */
+int fat_create_dir_entry(const char *path, uint8_t attr,
+                         uint32_t start_cluster);
+
 #endif
