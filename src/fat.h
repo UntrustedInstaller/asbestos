@@ -59,4 +59,13 @@ int fat_is_dir(const char *path);
 int fat_create_dir_entry(const char *path, uint8_t attr,
                          uint32_t start_cluster);
 
+/* Allocate a free cluster in the FAT. Marks it as end-of-chain.
+ * Returns the cluster number, or 0xFFFFFFFF on error. FAT12 only. */
+uint32_t fat_alloc_cluster(void);
+
+/* Initialize a new directory with `.` and `..` entries.
+ * Writes to the directory's first cluster sector. FAT12/FAT16 only.
+ * Returns 0 on success, -1 on error. */
+int fat_init_dir(uint32_t dir_cluster, uint32_t parent_cluster);
+
 #endif

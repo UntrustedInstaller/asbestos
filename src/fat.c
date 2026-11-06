@@ -218,7 +218,7 @@ static uint32_t fat_next_cluster(uint32_t cluster) {
 
 /* Allocate a free cluster in the FAT. Marks it as end-of-chain.
  * Returns the cluster number, or 0xFFFFFFFF on error. FAT12 only. */
-static uint32_t fat_alloc_cluster(void) {
+uint32_t fat_alloc_cluster(void) {
     if (!is_fat12) {
         return 0xFFFFFFFF;
     }
@@ -499,6 +499,34 @@ int fat_create_dir_entry(const char *path, uint8_t attr,
     }
 
     return -1;  /* Directory full */
+}
+
+/* Initialize a new directory with `.` and `..` entries.
+ * Writes to the directory's first cluster sector. FAT12/FAT16 only.
+ * Returns 0 on success, -1 on error. */
+int fat_init_dir(uint32_t dir_cluster, uint32_t parent_cluster) {
+    uint32_t lba = cluster_to_lba(dir_cluster);
+
+    if (read_sector(lba, sector_buf)) {
+        return -1;
+    }
+
+    /* `.` entry: name = ".          ", attr = directory, cluster = dir_cluster */
+    const char dot_name[11] = {'.', ' ', ' ', ' ', ' ', ' ', ' ', ' ',
+                               ' ', ' ', ' '};
+    write_dir_entry(&sector_buf[0], dot_name, ATTR_DIRECTORY, dir_cluster);
+
+    /* `..` entry: name = "..         ", attr = directory, cluster = parent */
+    const char dotdot_name[11] = {'.', '.', ' ', ' ', ' ', ' ', ' ', ' ',
+                                  ' ', ' ', ' '};
+    write_dir_entry(&sector_buf[DIR_ENTRY_SIZE], dotdot_name,
+                    ATTR_DIRECTORY, parent_cluster);
+
+    if (write_sector(lba, sector_buf)) {
+        return -1;
+    }
+
+    return 0;
 }
 
 /* Write a 32-byte directory entry from an 11-byte padded name. */
