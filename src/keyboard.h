@@ -28,6 +28,12 @@ int keyboard_scancode_available(void);
 char keyboard_poll(void);
 char keyboard_read_char(void);
 
+/*
+ * Block until a character is available or `timeout_ticks` PIT ticks elapse.
+ * Returns 0 on timeout (no key pressed within the window).
+ */
+char keyboard_read_char_timeout(uint32_t timeout_ticks);
+
 /* Called from isr_dispatch() on IRQ 1 (vector 33). */
 void keyboard_irq_handler(void);
 

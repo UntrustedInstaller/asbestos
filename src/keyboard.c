@@ -1,6 +1,7 @@
 #include "keyboard.h"
 #include "io.h"
 #include "pic.h"
+#include "pit.h"
 
 #define PS2_DATA 0x60
 
@@ -162,6 +163,22 @@ char keyboard_poll(void) {
 
 char keyboard_read_char(void) {
     while (!keyboard_scancode_available()) {
+        cpu_pause();
+    }
+    return keyboard_poll();
+}
+
+/*
+ * Block until a character is available or `timeout_ticks` PIT ticks elapse.
+ * Returns 0 on timeout (no key pressed within the window).
+ */
+char keyboard_read_char_timeout(uint32_t timeout_ticks) {
+    uint32_t start = pit_ticks_get();
+
+    while (!keyboard_scancode_available()) {
+        if (pit_ticks_get() - start >= timeout_ticks) {
+            return 0;
+        }
         cpu_pause();
     }
     return keyboard_poll();
