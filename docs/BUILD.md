@@ -225,6 +225,16 @@ type_keys s o r r y spc t r u e ret              # apology accepted, prompt norm
 `false` leaves the prompt at `usr@brash(hurt feelings):~>`; `sorry true`
 restores it to `usr@brash:~>`.
 
+To verify the input timeout:
+
+```bash
+# Wait 30 seconds without typing anything at the prompt.
+# The prompt should be reprinted with any partial input cleared.
+```
+
+The shell applies a 30 second input timeout: if no key is pressed while at
+the prompt, any partial input is erased and the prompt is reprinted.
+
 ## Testing the panic screen
 
 The shell has a built-in `panic` command that deliberately divides by zero:

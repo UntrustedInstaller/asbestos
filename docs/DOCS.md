@@ -370,11 +370,15 @@ is empty. Otherwise it returns ASCII for printable keys, `\b` for Backspace,
 Shift and Caps Lock, and drops extended (`0xE0`-prefixed) keys such as arrows.
 It also ignores bytes flagged as AUX (mouse) data. `keyboard_read_char()` waits
 for the buffer to become non-empty, then decodes one character.
+`keyboard_read_char_timeout()` does the same but returns 0 if no key arrives
+within the given number of PIT ticks.
 
 The driver assumes scancode set 1, which is what the 8042 translation mode
 produces on the target machines. Unsupported keys are simply ignored. The shell
-still busy-waits with `cpu_pause()` while the buffer is empty; it does not yet
-sleep on an interrupt, so an idle shell keeps the CPU warm.
+busy-waits with `cpu_pause()` while the buffer is empty; it does not yet sleep
+on an interrupt, so an idle shell keeps the CPU warm. `brash` applies a 30
+second input timeout: if no key is pressed while at the prompt, any partial
+input is cleared and the prompt is reprinted.
 
 ### brash
 
@@ -552,8 +556,6 @@ entered line is mirrored as `brash: <line>`; `halt` also prints
 
 The tree is still deliberately incomplete:
 
-- **Input timeouts** — keyboard input is IRQ-driven, but the shell waits
-  forever for the next key.
 - **Storage** — read-only ATA PIO plus FAT12/FAT16/FAT32. USB and AHCI systems
   that the ATA driver cannot reach fall back to an embedded 64 KiB FAT12 image.
   There is no write support.
