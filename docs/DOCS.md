@@ -456,6 +456,8 @@ The first iteration is built-in only:
 | `grep <pat> <file>` | Search for a pattern in a file |
 | `basename <path>` | Print the final component of a path |
 | `dirname <path>` | Print the directory portion of a path |
+| `mkdir <dir>` | Create a directory |
+| `touch <file>` | Create an empty file |
 | `halt` | Stop the machine |
 | `panic` | Force a divide error and enter the panic screen |
 | `reboot` | Reset the machine |
