@@ -295,6 +295,68 @@ static uint32_t fat_alloc_cluster(void) {
     return 0xFFFFFFFF;  /* Disk full */
 }
 
+/* Free a cluster chain in the FAT. Sets each entry to 0 (free).
+ * FAT12 only. Returns 0 on success, -1 on error. */
+static int fat_free_cluster_chain(uint32_t cluster) {
+    if (!is_fat12 || cluster < 2u) {
+        return -1;
+    }
+
+    while (cluster != 0xFFFFFFFFu) {
+        uint32_t next = fat_next_cluster(cluster);
+
+        uint32_t fat_offset = cluster + (cluster >> 1);
+        uint32_t fat_sector = fat_start_sector + (fat_offset / bytes_per_sector);
+        uint32_t fat_entry_offset = fat_offset % bytes_per_sector;
+
+        if (read_sector(fat_sector, sector_buf)) {
+            return -1;
+        }
+
+        int straddle = (fat_entry_offset == (uint32_t)(bytes_per_sector - 1));
+        uint16_t word;
+
+        if (straddle) {
+            if (read_sector(fat_sector + 1, fat_sector_buf)) {
+                return -1;
+            }
+            word = (uint16_t)sector_buf[fat_entry_offset] |
+                   ((uint16_t)fat_sector_buf[0] << 8);
+        } else {
+            word = read_u16(&sector_buf[fat_entry_offset]);
+        }
+
+        /* Clear the 12-bit entry to 0 (free). */
+        uint16_t new_word;
+        if (cluster & 1u) {
+            new_word = (uint16_t)(word & 0x000Fu);  /* preserve low 4 bits */
+        } else {
+            new_word = (uint16_t)(word & 0xF000u);  /* preserve high 4 bits */
+        }
+
+        if (straddle) {
+            sector_buf[fat_entry_offset] = (uint8_t)(new_word & 0xFFu);
+            if (write_sector(fat_sector, sector_buf)) {
+                return -1;
+            }
+            fat_sector_buf[0] = (uint8_t)(new_word >> 8);
+            if (write_sector(fat_sector + 1, fat_sector_buf)) {
+                return -1;
+            }
+        } else {
+            sector_buf[fat_entry_offset] = (uint8_t)(new_word & 0xFFu);
+            sector_buf[fat_entry_offset + 1] = (uint8_t)(new_word >> 8);
+            if (write_sector(fat_sector, sector_buf)) {
+                return -1;
+            }
+        }
+
+        cluster = next;
+    }
+
+    return 0;
+}
+
 /* ------------------------------------------------------------------ */
 /*  Name helpers                                                      */
 /* ------------------------------------------------------------------ */
