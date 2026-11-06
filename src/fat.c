@@ -76,8 +76,9 @@ static uint32_t current_offset = 0;
 static uint32_t current_size = 0;
 static int      file_open = 0;
 
-/* Sector buffer */
+/* Sector buffers */
 static uint8_t sector_buf[512];
+static uint8_t fat_sector_buf[512];  /* second buffer for FAT sector straddling */
 
 /* ------------------------------------------------------------------ */
 /*  Low-level helpers                                                 */
@@ -213,6 +214,85 @@ static uint32_t fat_next_cluster(uint32_t cluster) {
         }
         return next;
     }
+}
+
+/* Allocate a free cluster in the FAT. Marks it as end-of-chain.
+ * Returns the cluster number, or 0xFFFFFFFF on error. FAT12 only. */
+static uint32_t fat_alloc_cluster(void) {
+    if (!is_fat12) {
+        return 0xFFFFFFFF;
+    }
+
+    /* Clusters 0 and 1 are reserved; scan from cluster 2. */
+    uint32_t max_clusters = (sectors_per_fat * bytes_per_sector * 2u) / 3u;
+
+    for (uint32_t cluster = 2; cluster < max_clusters; cluster++) {
+        uint32_t fat_offset = cluster + (cluster >> 1);
+        uint32_t fat_sector = fat_start_sector + (fat_offset / bytes_per_sector);
+        uint32_t fat_entry_offset = fat_offset % bytes_per_sector;
+
+        if (read_sector(fat_sector, sector_buf)) {
+            return 0xFFFFFFFF;
+        }
+
+        /* Handle entry straddling two sectors. */
+        int straddle = (fat_entry_offset == (uint32_t)(bytes_per_sector - 1));
+        uint16_t word;
+
+        if (straddle) {
+            if (read_sector(fat_sector + 1, fat_sector_buf)) {
+                return 0xFFFFFFFF;
+            }
+            word = (uint16_t)sector_buf[fat_entry_offset] |
+                   ((uint16_t)fat_sector_buf[0] << 8);
+        } else {
+            word = read_u16(&sector_buf[fat_entry_offset]);
+        }
+
+        /* Extract the 12-bit entry for this cluster. */
+        uint16_t entry;
+        if (cluster & 1u) {
+            entry = (uint16_t)(word >> 4);
+        } else {
+            entry = (uint16_t)(word & 0x0FFFu);
+        }
+
+        if (entry != 0x000u) {
+            continue;  /* Not free */
+        }
+
+        /* Mark as end-of-chain (0xFFF). */
+        uint16_t new_value = 0x0FFFu;
+        uint16_t new_word;
+
+        if (cluster & 1u) {
+            new_word = (uint16_t)((word & 0x000Fu) | (new_value << 4));
+        } else {
+            new_word = (uint16_t)((word & 0xF000u) | new_value);
+        }
+
+        /* Write back to the FAT sector(s). */
+        if (straddle) {
+            sector_buf[fat_entry_offset] = (uint8_t)(new_word & 0xFFu);
+            if (write_sector(fat_sector, sector_buf)) {
+                return 0xFFFFFFFF;
+            }
+            fat_sector_buf[0] = (uint8_t)(new_word >> 8);
+            if (write_sector(fat_sector + 1, fat_sector_buf)) {
+                return 0xFFFFFFFF;
+            }
+        } else {
+            sector_buf[fat_entry_offset] = (uint8_t)(new_word & 0xFFu);
+            sector_buf[fat_entry_offset + 1] = (uint8_t)(new_word >> 8);
+            if (write_sector(fat_sector, sector_buf)) {
+                return 0xFFFFFFFF;
+            }
+        }
+
+        return cluster;
+    }
+
+    return 0xFFFFFFFF;  /* Disk full */
 }
 
 /* ------------------------------------------------------------------ */
