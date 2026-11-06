@@ -875,15 +875,11 @@ static int command_mkdir(int argc, char *argv[]) {
         uint32_t parent_cluster = 0;
         if (parent_path[0] != '\0') {
             /* Resolve parent path to a cluster number */
-            if (!fat_is_dir(parent_path)) {
+            if (fat_get_dir_cluster(parent_path, &parent_cluster) != 0) {
                 fat_free_cluster_chain(new_cluster);
                 console_puts("mkdir: parent directory not found\n");
                 return -1;
             }
-            /* We need the parent's cluster number. fat_is_dir doesn't
-             * return it, so walk the path again manually. */
-            /* For root-based paths, parent_cluster = 0 */
-            parent_cluster = 0;  /* Simplified: parent is root-relative */
         }
 
         if (fat_init_dir(new_cluster, parent_cluster) != 0) {
