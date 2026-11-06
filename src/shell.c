@@ -227,17 +227,34 @@ static int tokenize(char *text, char *argv[], int max_args) {
     }
 }
 
-static void read_line(char *buffer, usize capacity) {
+/*
+ * Read a line of input with a timeout. Returns 0 when Enter is pressed,
+ * -1 if no key arrives within the timeout window (partial input is erased
+ * from the screen before returning).
+ */
+static int read_line(char *buffer, usize capacity) {
     usize length = 0;
 
     for (;;) {
-        /* Blocks until a key is available (IRQ-driven). */
-        char c = keyboard_read_char();
+        /* 30 seconds at 100 Hz PIT ticks. */
+        char c = keyboard_read_char_timeout(3000u);
+
+        if (c == 0) {
+            /* Timeout: erase any partial input and return. */
+            while (length > 0) {
+                console_putc('\b');
+                console_putc(' ');
+                console_putc('\b');
+                length--;
+            }
+            console_putc('\n');
+            return -1;
+        }
 
         if (c == '\n') {
             console_putc('\n');
             buffer[length] = '\0';
-            return;
+            return 0;
         }
 
         if (c == '\b') {
@@ -1070,7 +1087,10 @@ void shell_run(void) {
     for (;;) {
         print_prompt();
 
-        read_line(line, sizeof(line));
+        if (read_line(line, sizeof(line)) != 0) {
+            /* Input timeout: reprint the prompt. */
+            continue;
+        }
 
         serial_puts("brash: ");
         serial_puts(line);
