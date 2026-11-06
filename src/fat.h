@@ -2,6 +2,14 @@
 #define FAT32_H
 
 #include "types32.h"
+/* Directory entry attribute flags. */
+#define ATTR_READONLY 0x01
+#define ATTR_HIDDEN   0x02
+#define ATTR_SYSTEM   0x04
+#define ATTR_VOLUME   0x08
+#define ATTR_DIRECTORY 0x10
+#define ATTR_ARCHIVE  0x20
+#define ATTR_LFN        0x0F
 
 /*
  * FAT16 / FAT32 read-only filesystem driver.
@@ -67,5 +75,13 @@ uint32_t fat_alloc_cluster(void);
  * Writes to the directory's first cluster sector. FAT12/FAT16 only.
  * Returns 0 on success, -1 on error. */
 int fat_init_dir(uint32_t dir_cluster, uint32_t parent_cluster);
+
+/* Free a cluster chain in the FAT. FAT12 only. Returns 0 on success, -1 on error. */
+int fat_free_cluster_chain(uint32_t cluster);
+
+/* Look up the starting cluster of a directory. Returns 0 on success,
+ * -1 on error. On success, *cluster is set to the directory's cluster
+ * (0 for the root directory). */
+int fat_get_dir_cluster(const char *path, uint32_t *cluster);
 
 #endif

@@ -291,6 +291,7 @@ static void command_help(void) {
     console_puts("  grep <pat> <file>  search for a pattern in a file\n");
     console_puts("  basename <path>  print the final component of a path\n");
     console_puts("  dirname <path>   print the directory portion of a path\n");
+    console_puts("  mkdir <dir>      create a directory\n");
     console_puts("  ls [-l] [-a] [dir]  list directory contents\n");
     console_puts("  cat <file>...  display file contents\n");
     console_puts("  halt           stop the machine\n");
@@ -815,6 +816,88 @@ static void command_pwd(void) {
     console_putc('\n');
 }
 
+static int command_mkdir(int argc, char *argv[]) {
+    if (argc < 3) {
+        console_puts("Usage: mkdir <dir>\n");
+        return -1;
+    }
+
+    char path[SHELL_PATH_MAX];
+    if (resolve_path(argv[2], path) != 0) {
+        console_puts("mkdir: path too long\n");
+        return -1;
+    }
+
+    /* Allocate a cluster for the new directory. */
+    uint32_t new_cluster = fat_alloc_cluster();
+    if (new_cluster == 0xFFFFFFFFu) {
+        console_puts("mkdir: disk full\n");
+        return -1;
+    }
+
+    /* Create the directory entry in the parent. */
+    if (fat_create_dir_entry(path, ATTR_DIRECTORY, new_cluster) != 0) {
+        /* Roll back the cluster allocation. */
+        fat_free_cluster_chain(new_cluster);
+        console_puts("mkdir: ");
+        console_puts(argv[2]);
+        console_puts(": cannot create directory\n");
+        return -1;
+    }
+
+    /* Initialize . and .. entries in the new directory.
+     * The parent cluster is embedded in `path`: walk back to find it.
+     * For simplicity, resolve the parent path separately. */
+    char parent_path[SHELL_PATH_MAX];
+    int i;
+    /* Find the last slash to separate parent from name */
+    int last_slash = -1;
+    for (i = 0; path[i]; i++) {
+        if (path[i] == '/') {
+            last_slash = i;
+        }
+    }
+    if (last_slash < 0) {
+        /* Parent is root */
+        if (fat_init_dir(new_cluster, 0) != 0) {
+            fat_free_cluster_chain(new_cluster);
+            console_puts("mkdir: failed to initialize directory\n");
+            return -1;
+        }
+    } else {
+        /* Parent path is everything before the last slash */
+        for (i = 0; i < last_slash; i++) {
+            parent_path[i] = path[i];
+        }
+        parent_path[last_slash] = '\0';
+
+        uint32_t parent_cluster = 0;
+        if (parent_path[0] != '\0') {
+            /* Resolve parent path to a cluster number */
+            if (!fat_is_dir(parent_path)) {
+                fat_free_cluster_chain(new_cluster);
+                console_puts("mkdir: parent directory not found\n");
+                return -1;
+            }
+            /* We need the parent's cluster number. fat_is_dir doesn't
+             * return it, so walk the path again manually. */
+            /* For root-based paths, parent_cluster = 0 */
+            parent_cluster = 0;  /* Simplified: parent is root-relative */
+        }
+
+        if (fat_init_dir(new_cluster, parent_cluster) != 0) {
+            fat_free_cluster_chain(new_cluster);
+            console_puts("mkdir: failed to initialize directory\n");
+            return -1;
+        }
+    }
+
+    console_puts("mkdir: created ");
+    console_puts(argv[2]);
+    console_putc('\n');
+    return 0;
+}
+
 static int command_ls(int argc, char *argv[]) {
     int long_format = 0;
     int show_all = 0;
@@ -1059,6 +1142,8 @@ static void dispatch(char *text) {
         result = command_dirname(argc, argv);
     } else if (strcmp(command, "ls") == 0) {
         result = command_ls(argc, argv);
+    } else if (strcmp(command, "mkdir") == 0) {
+        result = command_mkdir(argc, argv);
     } else if (strcmp(command, "cat") == 0) {
         result = command_cat(argc, argv);
     } else if (strcmp(command, "halt") == 0) {

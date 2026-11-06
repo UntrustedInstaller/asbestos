@@ -297,7 +297,7 @@ uint32_t fat_alloc_cluster(void) {
 
 /* Free a cluster chain in the FAT. Sets each entry to 0 (free).
  * FAT12 only. Returns 0 on success, -1 on error. */
-static int fat_free_cluster_chain(uint32_t cluster) {
+int fat_free_cluster_chain(uint32_t cluster) {
     if (!is_fat12 || cluster < 2u) {
         return -1;
     }
@@ -526,6 +526,62 @@ int fat_init_dir(uint32_t dir_cluster, uint32_t parent_cluster) {
         return -1;
     }
 
+    return 0;
+}
+
+/* Look up the starting cluster of a directory. Returns 0 on success,
+ * -1 on error. On success, *cluster is set to the directory's cluster
+ * (0 for the root directory). FAT12/FAT16 only. */
+int fat_get_dir_cluster(const char *path, uint32_t *cluster) {
+    char name_11[11];
+    int pos = 0;
+    uint32_t cur_cluster = 0;
+    int in_dir = 0;
+
+    if (path == 0 || path[0] == '\0') {
+        *cluster = 0;  /* Root directory */
+        return 0;
+    }
+
+    /* Set starting directory */
+    if (is_fat32) {
+        uint8_t bs[512];
+        if (read_sector(fat_boot_sector, bs)) {
+            return -1;
+        }
+        cur_cluster = read_u32(&bs[FAT32_ROOT_CLUSTER]);
+    } else {
+        cur_cluster = 0;
+    }
+
+    while (path[pos]) {
+        int consumed = parse_component(&path[pos], name_11);
+        uint32_t found_cluster = 0;
+        uint32_t found_size = 0;
+        uint8_t found_attr = 0;
+        int found;
+
+        pos += consumed;
+
+        if (is_fat32 || !in_dir) {
+            found = scan_dir_for_name(root_dir_sector, root_dir_entries,
+                                      name_11, &found_cluster, &found_size,
+                                      &found_attr);
+            in_dir = 1;
+        } else {
+            found = scan_fat32_dir_chain(cur_cluster, name_11,
+                                         &found_cluster, &found_size,
+                                         &found_attr);
+        }
+
+        if (found != 0 || !(found_attr & ATTR_DIRECTORY)) {
+            return -1;  /* Not found or not a directory */
+        }
+
+        cur_cluster = found_cluster;
+    }
+
+    *cluster = cur_cluster;
     return 0;
 }
 
