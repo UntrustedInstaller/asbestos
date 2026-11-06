@@ -261,7 +261,7 @@ static void command_help(void) {
     console_puts("  uname          print OS name and version\n");
     console_puts("  echo <text>    print text\n");
     console_puts("  clear          clear the screen\n");
-    console_puts("  cd [dir]       change directory\n");
+    console_puts("  cd [dir]       change working directory\n");
     console_puts("  pwd            print current directory\n");
     console_puts("  ls [-l] [-a] [dir]  list directory contents\n");
     console_puts("  cat <file>...  display file contents\n");
