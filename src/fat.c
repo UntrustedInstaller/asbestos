@@ -66,8 +66,8 @@ static int      is_fat32 = 0;
 static uint32_t fat_boot_sector = 0;
 
 /* Optional in-memory disk image. When non-NULL, sector reads come from
- * here instead of the ATA disk. */
-static const uint8_t *memdisk_base = 0;
+ * here instead of the ATA disk. Writes go here too when non-NULL. */
+static uint8_t *memdisk_base = 0;
 static uint32_t memdisk_sectors = 0;
 
 /* Current open file state */
@@ -110,6 +110,29 @@ static int read_sector(uint32_t lba, void *buf) {
     }
 
     return ata_read_sectors(ATA_DRIVE, lba, 1, buf);
+}
+
+/* Write a sector. Only the in-memory disk is writable; ATA is read-only. */
+static int write_sector(uint32_t lba, const void *buf) {
+    const uint8_t *src = (const uint8_t *)buf;
+    uint8_t *dst;
+    uint32_t i;
+
+    if (memdisk_base != 0) {
+        if (lba >= memdisk_sectors) {
+            return -1;
+        }
+        dst = memdisk_base + (lba * 512u);
+        for (i = 0; i < 512u; i++) {
+            dst[i] = src[i];
+        }
+        return 0;
+    }
+
+    /* ATA PIO is read-only in this driver. */
+    (void)lba;
+    (void)src;
+    return -1;
 }
 
 /* Convert cluster number to LBA of the first sector of that cluster.
@@ -794,7 +817,7 @@ void fat_set_boot_sector(uint32_t lba) {
     fat_boot_sector = lba;
 }
 
-void fat_set_memdisk(const void *base, uint32_t size) {
-    memdisk_base = (const uint8_t *)base;
+void fat_set_memdisk(void *base, uint32_t size) {
+    memdisk_base = (uint8_t *)base;
     memdisk_sectors = size / 512u;
 }

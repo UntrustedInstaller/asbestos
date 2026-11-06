@@ -95,7 +95,7 @@ void kernel_main(void) {
             serial_puts("fat: disk image unavailable, using embedded image\n");
             fat_close();
 
-            fat_set_memdisk(_binary_build_fat_part_img_start,
+            fat_set_memdisk((uint8_t *)_binary_build_fat_part_img_start,
                             (uint32_t)(_binary_build_fat_part_img_end -
                                        _binary_build_fat_part_img_start));
             fat_set_boot_sector(0);

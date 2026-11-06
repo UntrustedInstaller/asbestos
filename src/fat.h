@@ -22,8 +22,9 @@ void fat_set_boot_sector(uint32_t lba);
 /* Serve all sector reads from an in-memory FAT image instead of the ATA
  * disk. Pass NULL to go back to ATA reads. This lets the kernel read a
  * filesystem embedded in the kernel image, which works no matter how the
- * machine booted (USB, AHCI, legacy IDE). */
-void fat_set_memdisk(const void *base, uint32_t size);
+ * machine booted (USB, AHCI, legacy IDE). Writes also target the memdisk
+ * when it is set; ATA remains read-only. */
+void fat_set_memdisk(void *base, uint32_t size);
 
 /*
  * Open a file by path. Path uses forward slashes, e.g. "SYSTEM/FOO.TXT".
