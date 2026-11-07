@@ -28,7 +28,7 @@ statements are rejected outright.
 
 Built-ins are `help`, `about`, `uname`, `echo`, `clear`, `cd`, `pwd`, `true`,
 `false`, `sleep`, `stat`, `head`, `tail`, `wc`, `grep`, `basename`, `dirname`,
-`mkdir`, `touch`, `rm`, `cp`, `ls`, `cat`, `halt`, `panic`, and `reboot`. The full manners rules and the
+`mkdir`, `touch`, `rm`, `cp`, `mv`, `ls`, `cat`, `halt`, `panic`, and `reboot`. The full manners rules and the
 current error strings are documented in [docs/DOCS.md](docs/DOCS.md).
 
 ## Quick start

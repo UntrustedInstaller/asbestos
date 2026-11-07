@@ -460,6 +460,7 @@ The first iteration is built-in only:
 | `touch <file>` | Create an empty file |
 | `rm <file>` | Delete a file |
 | `cp <src> <dst>` | Copy a file |
+| `mv <src> <dst>` | Move a file |
 | `halt` | Stop the machine |
 | `panic` | Force a divide error and enter the panic screen |
 | `reboot` | Reset the machine |
