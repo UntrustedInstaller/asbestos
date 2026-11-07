@@ -79,6 +79,11 @@ int fat_init_dir(uint32_t dir_cluster, uint32_t parent_cluster);
 /* Free a cluster chain in the FAT. FAT12 only. Returns 0 on success, -1 on error. */
 int fat_free_cluster_chain(uint32_t cluster);
 
+/* Delete a directory entry at `path`. Marks the entry as deleted and frees
+ * its cluster chain if it is a directory. FAT12/FAT16 only. Returns 0 on
+ * success, -1 on error. */
+int fat_delete_dir_entry(const char *path);
+
 /* Look up the starting cluster of a directory. Returns 0 on success,
  * -1 on error. On success, *cluster is set to the directory's cluster
  * (0 for the root directory). */

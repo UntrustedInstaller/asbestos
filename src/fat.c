@@ -501,6 +501,154 @@ int fat_create_dir_entry(const char *path, uint8_t attr,
     return -1;  /* Directory full */
 }
 
+/* Delete a directory entry at `path`. Marks the entry as deleted and frees
+ * its cluster chain if it is a directory. FAT12/FAT16 only for now.
+ * Returns 0 on success, -1 on error. */
+int fat_delete_dir_entry(const char *path) {
+    char name_11[11];
+    int pos = 0;
+    uint32_t cur_cluster = 0;
+    int in_dir = 0;
+
+    /* Set starting directory */
+    if (is_fat32) {
+        uint8_t bs[512];
+        if (read_sector(fat_boot_sector, bs)) {
+            return -1;
+        }
+        cur_cluster = read_u32(&bs[FAT32_ROOT_CLUSTER]);
+    } else {
+        cur_cluster = 0;
+    }
+
+    /* Walk all but the last path component to reach the parent directory */
+    while (path[pos]) {
+        int consumed = parse_component(&path[pos], name_11);
+        int next_pos = pos + consumed;
+
+        /* Last component: this is the name to delete */
+        if (path[next_pos] == '\0') {
+            break;
+        }
+
+        uint32_t found_cluster = 0;
+        uint32_t found_size = 0;
+        uint8_t found_attr = 0;
+        int found;
+
+        if (is_fat32 || !in_dir) {
+            found = scan_dir_for_name(root_dir_sector, root_dir_entries,
+                                      name_11, &found_cluster, &found_size,
+                                      &found_attr);
+            in_dir = 1;
+        } else {
+            found = scan_fat32_dir_chain(cur_cluster, name_11,
+                                         &found_cluster, &found_size,
+                                         &found_attr);
+        }
+
+        if (found != 0 || !(found_attr & ATTR_DIRECTORY)) {
+            return -1;  /* Parent not found or not a directory */
+        }
+
+        cur_cluster = found_cluster;
+        pos = next_pos;
+    }
+
+    /* Parse final component as the entry name to delete */
+    parse_component(&path[pos], name_11);
+
+    /* Find the entry in the parent directory */
+    if (!is_fat32 && cur_cluster == 0) {
+        /* FAT12/FAT16 root directory: linear region */
+        uint32_t sector;
+        for (sector = 0; sector < root_dir_size_sectors; sector++) {
+            uint32_t e;
+            if (read_sector(root_dir_sector + sector, sector_buf)) {
+                return -1;
+            }
+            for (e = 0; e < bytes_per_sector / DIR_ENTRY_SIZE; e++) {
+                uint8_t *ent = &sector_buf[e * DIR_ENTRY_SIZE];
+                if (ent[DIR_NAME] == DIR_FREE ||
+                    ent[DIR_NAME] == DIR_DELETED) {
+                    continue;
+                }
+                int name_match = 1;
+                for (uint32_t n = 0; n < 11; n++) {
+                    if (ent[n] != (uint8_t)name_11[n]) {
+                        name_match = 0;
+                        break;
+                    }
+                }
+                if (name_match) {
+                    ent[DIR_NAME] = DIR_DELETED;
+                    if (write_sector(root_dir_sector + sector, sector_buf)) {
+                        return -1;
+                    }
+                    /* Free cluster chain if it is a directory */
+                    if (ent[DIR_ATTR] & ATTR_DIRECTORY) {
+                        uint32_t clus = read_u16(&ent[DIR_FST_CLUS_LO]) |
+                                        ((uint32_t)read_u16(&ent[DIR_FST_CLUS_HI])
+                                         << 16);
+                        if (clus >= 2u) {
+                            fat_free_cluster_chain(clus);
+                        }
+                    }
+                    return 0;
+                }
+            }
+        }
+        return -1;  /* Not found */
+    }
+
+    /* Subdirectory (or FAT32 root): cluster chain */
+    uint32_t cluster = cur_cluster;
+    while (cluster != 0xFFFFFFFFu) {
+        uint32_t lba = cluster_to_lba(cluster);
+        uint32_t entries_per_cluster =
+            sectors_per_cluster * (bytes_per_sector / DIR_ENTRY_SIZE);
+        uint32_t e;
+        for (e = 0; e < entries_per_cluster; e++) {
+            uint32_t sector_in_cluster =
+                lba + ((e * DIR_ENTRY_SIZE) / bytes_per_sector);
+            if (read_sector(sector_in_cluster, sector_buf)) {
+                return -1;
+            }
+            uint8_t *ent = &sector_buf[(e * DIR_ENTRY_SIZE) % bytes_per_sector];
+            if (ent[DIR_NAME] == DIR_FREE ||
+                ent[DIR_NAME] == DIR_DELETED) {
+                continue;
+            }
+            int name_match = 1;
+            for (uint32_t n = 0; n < 11; n++) {
+                if (ent[n] != (uint8_t)name_11[n]) {
+                    name_match = 0;
+                    break;
+                }
+            }
+            if (name_match) {
+                ent[DIR_NAME] = DIR_DELETED;
+                if (write_sector(sector_in_cluster, sector_buf)) {
+                    return -1;
+                }
+                /* Free cluster chain if it is a directory */
+                if (ent[DIR_ATTR] & ATTR_DIRECTORY) {
+                    uint32_t clus = read_u16(&ent[DIR_FST_CLUS_LO]) |
+                                    ((uint32_t)read_u16(&ent[DIR_FST_CLUS_HI])
+                                     << 16);
+                    if (clus >= 2u) {
+                        fat_free_cluster_chain(clus);
+                    }
+                }
+                return 0;
+            }
+        }
+        cluster = fat_next_cluster(cluster);
+    }
+
+    return -1;  /* Not found */
+}
+
 /* Initialize a new directory with `.` and `..` entries.
  * Writes to the directory's first cluster sector. FAT12/FAT16 only.
  * Returns 0 on success, -1 on error. */
