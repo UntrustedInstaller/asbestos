@@ -295,6 +295,7 @@ static void command_help(void) {
     console_puts("  touch <file>     create an empty file\n");
     console_puts("  rm <file>        delete a file\n");
     console_puts("  cp <src> <dst>   copy a file\n");
+    console_puts("  mv <src> <dst>   move a file\n");
     console_puts("  ls [-l] [-a] [dir]  list directory contents\n");
     console_puts("  cat <file>...  display file contents\n");
     console_puts("  halt           stop the machine\n");
