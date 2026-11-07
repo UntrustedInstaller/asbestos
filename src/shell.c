@@ -36,7 +36,8 @@
 #define SHELL_ERROR_COMPOUND "I can't multitask well. Please avoid compound statements."
 #define SHELL_ERROR_EMPTY "No command was given. Do you normally stare blankly at people?"
 #define SHELL_ERROR_TOO_MANY "Too many arguments. I can't keep track of all of that."
-#define SHELL_ERROR_UNKNOWN "Unknown command: "
+#define SHELL_ERROR_UNKNOWN_START "Unknown command: "
+#define SHELL_ERROR_UNKNOWN_END ". You know, you can try asking for help."
 
 #define SHELL_LINE_MAX 64
 #define SHELL_MAX_ARGS 8
@@ -1397,8 +1398,9 @@ static void dispatch(char *text) {
     } else if (strcmp(command, "reboot") == 0) {
         command_reboot();
     } else {
-        console_puts(SHELL_ERROR_UNKNOWN);
+        console_puts(SHELL_ERROR_UNKNOWN_START);
         console_puts(command);
+        console_puts(SHELL_ERROR_UNKNOWN_END);
         console_puts("\n");
         note_error();
         return;
