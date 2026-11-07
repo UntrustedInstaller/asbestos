@@ -216,6 +216,63 @@ static uint32_t fat_next_cluster(uint32_t cluster) {
     }
 }
 
+/* Write a FAT entry value for `cluster`. Returns 0 on success, -1 on error.
+ * FAT12 only for now. */
+static int fat_write_fat_entry(uint32_t cluster, uint16_t value) {
+    if (!is_fat12) {
+        return -1;
+    }
+
+    uint32_t fat_offset = cluster + (cluster >> 1);
+    uint32_t fat_sector = fat_start_sector + (fat_offset / bytes_per_sector);
+    uint32_t fat_entry_offset = fat_offset % bytes_per_sector;
+
+    if (read_sector(fat_sector, sector_buf)) {
+        return -1;
+    }
+
+    int straddle = (fat_entry_offset == (uint32_t)(bytes_per_sector - 1));
+    uint16_t word;
+
+    if (straddle) {
+        if (read_sector(fat_sector + 1, fat_sector_buf)) {
+            return -1;
+        }
+        word = (uint16_t)sector_buf[fat_entry_offset] |
+               ((uint16_t)fat_sector_buf[0] << 8);
+    } else {
+        word = read_u16(&sector_buf[fat_entry_offset]);
+    }
+
+    /* Insert the 12-bit value into the word. */
+    uint16_t new_word;
+    if (cluster & 1u) {
+        new_word = (uint16_t)((word & 0x000Fu) | (value << 4));
+    } else {
+        new_word = (uint16_t)((word & 0xF000u) | value);
+    }
+
+    /* Write back to the FAT sector(s). */
+    if (straddle) {
+        sector_buf[fat_entry_offset] = (uint8_t)(new_word & 0xFFu);
+        if (write_sector(fat_sector, sector_buf)) {
+            return -1;
+        }
+        fat_sector_buf[0] = (uint8_t)(new_word >> 8);
+        if (write_sector(fat_sector + 1, fat_sector_buf)) {
+            return -1;
+        }
+    } else {
+        sector_buf[fat_entry_offset] = (uint8_t)(new_word & 0xFFu);
+        sector_buf[fat_entry_offset + 1] = (uint8_t)(new_word >> 8);
+        if (write_sector(fat_sector, sector_buf)) {
+            return -1;
+        }
+    }
+
+    return 0;
+}
+
 /* Allocate a free cluster in the FAT. Marks it as end-of-chain.
  * Returns the cluster number, or 0xFFFFFFFF on error. FAT12 only. */
 uint32_t fat_alloc_cluster(void) {
