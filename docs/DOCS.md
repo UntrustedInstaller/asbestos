@@ -459,6 +459,7 @@ The first iteration is built-in only:
 | `mkdir <dir>` | Create a directory |
 | `touch <file>` | Create an empty file |
 | `rm <file>` | Delete a file |
+| `cp <src> <dst>` | Copy a file |
 | `halt` | Stop the machine |
 | `panic` | Force a divide error and enter the panic screen |
 | `reboot` | Reset the machine |
