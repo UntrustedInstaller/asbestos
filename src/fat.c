@@ -1427,3 +1427,230 @@ void fat_set_memdisk(void *base, uint32_t size) {
     memdisk_base = (uint8_t *)base;
     memdisk_sectors = size / 512u;
 }
+/* Write `size` bytes from `buf` to the file at `path`.
+ * The file entry must already exist (e.g. created by fat_create_dir_entry).
+ * Allocates clusters as needed and links them in the FAT.
+ * Returns 0 on success, -1 on error. FAT12/FAT16 only for now. */
+int fat_write_file(const char *path, const void *buf, uint32_t size) {
+    char name_11[11];
+    int pos = 0;
+    uint32_t cur_cluster = 0;
+    int in_dir = 0;
+    uint32_t target_sector = 0;
+    uint32_t target_entry_offset = 0;
+    int found_target = 0;
+
+    /* Set starting directory */
+    if (is_fat32) {
+        uint8_t bs[512];
+        if (read_sector(fat_boot_sector, bs)) {
+            return -1;
+        }
+        cur_cluster = read_u32(&bs[FAT32_ROOT_CLUSTER]);
+    } else {
+        cur_cluster = 0;
+    }
+
+    /* Walk all but the last path component to reach the parent directory */
+    while (path[pos]) {
+        int consumed = parse_component(&path[pos], name_11);
+        int next_pos = pos + consumed;
+
+        /* Last component: this is the file to write */
+        if (path[next_pos] == '\0') {
+            break;
+        }
+
+        uint32_t found_cluster = 0;
+        uint32_t found_size = 0;
+        uint8_t found_attr = 0;
+        int found;
+
+        if (is_fat32 || !in_dir) {
+            found = scan_dir_for_name(root_dir_sector, root_dir_entries,
+                                      name_11, &found_cluster, &found_size,
+                                      &found_attr);
+            in_dir = 1;
+        } else {
+            found = scan_fat32_dir_chain(cur_cluster, name_11,
+                                         &found_cluster, &found_size,
+                                         &found_attr);
+        }
+
+        if (found != 0 || !(found_attr & ATTR_DIRECTORY)) {
+            return -1;  /* Parent not found or not a directory */
+        }
+
+        cur_cluster = found_cluster;
+        pos = next_pos;
+    }
+
+    /* Parse final component as the file name */
+    parse_component(&path[pos], name_11);
+
+    /* Find the entry in the parent directory and record its location */
+    if (!is_fat32 && cur_cluster == 0) {
+        /* FAT12/FAT16 root directory: linear region */
+        uint32_t sector;
+        for (sector = 0; sector < root_dir_size_sectors; sector++) {
+            uint32_t e;
+            if (read_sector(root_dir_sector + sector, sector_buf)) {
+                return -1;
+            }
+            for (e = 0; e < bytes_per_sector / DIR_ENTRY_SIZE; e++) {
+                uint8_t *ent = &sector_buf[e * DIR_ENTRY_SIZE];
+                if (ent[DIR_NAME] == DIR_FREE || ent[DIR_NAME] == DIR_DELETED) {
+                    continue;
+                }
+                int name_match = 1;
+                for (uint32_t n = 0; n < 11; n++) {
+                    if (ent[n] != (uint8_t)name_11[n]) {
+                        name_match = 0;
+                        break;
+                    }
+                }
+                if (name_match) {
+                    target_sector = root_dir_sector + sector;
+                    target_entry_offset = e * DIR_ENTRY_SIZE;
+                    found_target = 1;
+                    break;
+                }
+            }
+            if (found_target) {
+                break;
+            }
+        }
+        if (!found_target) {
+            return -1;
+        }
+    } else {
+        /* Subdirectory (or FAT32 root): cluster chain */
+        uint32_t cluster = cur_cluster;
+        while (cluster != 0xFFFFFFFFu && !found_target) {
+            uint32_t lba = cluster_to_lba(cluster);
+            uint32_t entries_per_cluster =
+                sectors_per_cluster * (bytes_per_sector / DIR_ENTRY_SIZE);
+            uint32_t e;
+            for (e = 0; e < entries_per_cluster; e++) {
+                uint32_t sector_in_cluster =
+                    lba + ((e * DIR_ENTRY_SIZE) / bytes_per_sector);
+                if (read_sector(sector_in_cluster, sector_buf)) {
+                    return -1;
+                }
+                uint8_t *ent = &sector_buf[(e * DIR_ENTRY_SIZE) % bytes_per_sector];
+                if (ent[DIR_NAME] == DIR_FREE ||
+                    ent[DIR_NAME] == DIR_DELETED) {
+                    continue;
+                }
+                int name_match = 1;
+                for (uint32_t n = 0; n < 11; n++) {
+                    if (ent[n] != (uint8_t)name_11[n]) {
+                        name_match = 0;
+                        break;
+                    }
+                }
+                if (name_match) {
+                    target_sector = sector_in_cluster;
+                    target_entry_offset =
+                        (e * DIR_ENTRY_SIZE) % bytes_per_sector;
+                    found_target = 1;
+                    break;
+                }
+            }
+            cluster = fat_next_cluster(cluster);
+        }
+        if (!found_target) {
+            return -1;
+        }
+    }
+
+    /* Read the target entry's sector to modify it */
+    if (read_sector(target_sector, sector_buf)) {
+        return -1;
+    }
+
+    /* Allocate clusters for the data */
+    uint32_t bytes_per_cluster = cluster_size_bytes;
+    uint32_t num_clusters = (size + bytes_per_cluster - 1) / bytes_per_cluster;
+    uint32_t first_cluster = 0;
+    uint32_t prev_cluster = 0;
+
+    for (uint32_t i = 0; i < num_clusters; i++) {
+        uint32_t clus = fat_alloc_cluster();
+        if (clus == 0xFFFFFFFFu) {
+            return -1;  /* Disk full */
+        }
+        if (i == 0) {
+            first_cluster = clus;
+        } else {
+            /* Link prev_cluster -> clus in FAT */
+            if (fat_write_fat_entry(prev_cluster,
+                                    (uint16_t)clus) != 0) {
+                return -1;
+            }
+        }
+        prev_cluster = clus;
+    }
+
+    /* Mark last cluster as end-of-chain */
+    if (fat_write_fat_entry(prev_cluster, 0x0FFFu) != 0) {
+        return -1;
+    }
+
+    /* Write data to clusters */
+    uint32_t bytes_written = 0;
+    uint32_t clus = first_cluster;
+    const uint8_t *src = (const uint8_t *)buf;
+
+    while (bytes_written < size && clus != 0xFFFFFFFFu) {
+        uint32_t lba = cluster_to_lba(clus);
+        uint32_t remaining_in_cluster = bytes_per_cluster;
+        uint32_t to_write = size - bytes_written;
+        if (to_write > remaining_in_cluster) {
+            to_write = remaining_in_cluster;
+        }
+
+        uint32_t sectors_to_write = (to_write + bytes_per_sector - 1) /
+                                    bytes_per_sector;
+        uint32_t sector_data_offset = bytes_written;
+
+        for (uint32_t s = 0; s < sectors_to_write; s++) {
+            uint32_t sector_lba = lba + s;
+            uint32_t sector_data_start = sector_data_offset + s * bytes_per_sector;
+            uint32_t sector_data_end = sector_data_start + bytes_per_sector;
+            if (sector_data_end > size) {
+                sector_data_end = size;
+            }
+            uint32_t sector_data_len = sector_data_end - sector_data_start;
+
+            /* Read-modify-write: read the sector, overwrite with data, write back */
+            if (read_sector(sector_lba, sector_buf)) {
+                return -1;
+            }
+            for (uint32_t b = 0; b < sector_data_len; b++) {
+                sector_buf[b] = src[sector_data_start + b];
+            }
+            if (write_sector(sector_lba, sector_buf)) {
+                return -1;
+            }
+        }
+
+        bytes_written += to_write;
+        clus = fat_next_cluster(clus);
+    }
+
+    /* Update directory entry: starting cluster and file size */
+    uint8_t *ent = &sector_buf[target_entry_offset];
+    ent[DIR_FST_CLUS_HI] = (uint8_t)((first_cluster >> 16) & 0xFFu);
+    ent[DIR_FST_CLUS_LO] = (uint8_t)(first_cluster & 0xFFu);
+    ent[DIR_FILE_SIZE + 0] = (uint8_t)(size & 0xFFu);
+    ent[DIR_FILE_SIZE + 1] = (uint8_t)((size >> 8) & 0xFFu);
+    ent[DIR_FILE_SIZE + 2] = (uint8_t)((size >> 16) & 0xFFu);
+    ent[DIR_FILE_SIZE + 3] = (uint8_t)((size >> 24) & 0xFFu);
+
+    if (write_sector(target_sector, sector_buf)) {
+        return -1;
+    }
+
+    return 0;
+}

@@ -84,6 +84,12 @@ int fat_free_cluster_chain(uint32_t cluster);
  * success, -1 on error. */
 int fat_delete_dir_entry(const char *path);
 
+/* Write `size` bytes from `buf` to the file at `path`.
+ * The file entry must already exist (e.g. created by fat_create_dir_entry).
+ * Allocates clusters as needed and links them in the FAT.
+ * Returns 0 on success, -1 on error. FAT12/FAT16 only for now. */
+int fat_write_file(const char *path, const void *buf, uint32_t size);
+
 /* Look up the starting cluster of a directory. Returns 0 on success,
  * -1 on error. On success, *cluster is set to the directory's cluster
  * (0 for the root directory). */
