@@ -496,6 +496,21 @@ Commands
   pwd            print current directory
   ls [-l] [-a] [dir]  list directory contents
   cat <file>...  display file contents
+  true           do nothing, successfully
+  false          do nothing, unsuccessfully
+  sleep <secs>   busy-wait for the given seconds
+  stat <file>    print file size in bytes
+  head <file> [n]  print first N bytes (default 256)
+  tail <file> [n]  print last N bytes (default 256)
+  wc <file>      count bytes, words, and lines
+  grep <pat> <file>  search for a pattern in a file
+  basename <path>  print the final component of a path
+  dirname <path>   print the directory portion of a path
+  mkdir <dir>    create a directory
+  touch <file>   create an empty file
+  rm <file>      delete a file
+  cp <src> <dst> copy a file
+  mv <src> <dst> move a file
   halt           stop the machine
   panic          force a CPU fault
   reboot         reboot the machine
