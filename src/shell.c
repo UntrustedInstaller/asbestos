@@ -1386,6 +1386,8 @@ static void dispatch(char *text) {
         result = command_rm(argc, argv);
     } else if (strcmp(command, "cp") == 0) {
         result = command_cp(argc, argv);
+    } else if (strcmp(command, "mv") == 0) {
+        result = command_mv(argc, argv);
     } else if (strcmp(command, "cat") == 0) {
         result = command_cat(argc, argv);
     } else if (strcmp(command, "halt") == 0) {
