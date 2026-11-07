@@ -563,9 +563,11 @@ The tree is still deliberately incomplete:
 
 - **Storage** — read-only ATA PIO plus FAT12/FAT16/FAT32. USB and AHCI systems
   that the ATA driver cannot reach fall back to an embedded 64 KiB FAT12 image.
-  There is no write support.
+  Write support (`touch`, `mkdir`, `cp`, `mv`, `rm`) works on the on-disk FAT
+  partition via legacy ATA PIO. Writes to the embedded memdisk fallback work
+  while the machine is running but are not persistent across reboot.
 - **`brash`** — built-in commands only. It cannot run programs, but it can read
-  files and change directory on the read-only filesystem.
+  files and change directory on the filesystem.
 - **Line editing** — printable ASCII and Backspace only. No cursor movement, no
   history, no quoting or escaping, no globbing, no tab completion.
 - **Compound statements** — rejected outright rather than parsed.
