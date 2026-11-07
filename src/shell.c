@@ -294,6 +294,7 @@ static void command_help(void) {
     console_puts("  mkdir <dir>      create a directory\n");
     console_puts("  touch <file>     create an empty file\n");
     console_puts("  rm <file>        delete a file\n");
+    console_puts("  cp <src> <dst>   copy a file\n");
     console_puts("  ls [-l] [-a] [dir]  list directory contents\n");
     console_puts("  cat <file>...  display file contents\n");
     console_puts("  halt           stop the machine\n");
@@ -954,6 +955,91 @@ static int command_rm(int argc, char *argv[]) {
     return -1;
 }
 
+static int command_cp(int argc, char *argv[]) {
+    if (argc < 4) {
+        console_puts("Usage: cp <src> <dst>\n");
+        return -1;
+    }
+
+    char src_path[SHELL_PATH_MAX];
+    if (resolve_path(argv[2], src_path) != 0) {
+        console_puts("cp: source path too long\n");
+        return -1;
+    }
+
+    char dst_path[SHELL_PATH_MAX];
+    if (resolve_path(argv[3], dst_path) != 0) {
+        console_puts("cp: destination path too long\n");
+        return -1;
+    }
+
+    /* Source must exist and not be a directory */
+    if (fat_is_dir(src_path)) {
+        console_puts("cp: ");
+        console_puts(argv[2]);
+        console_puts(": Is a directory\n");
+        return -1;
+    }
+
+    /* Open source file and read its content */
+    if (fat_open(src_path) != 0) {
+        console_puts("cp: ");
+        console_puts(argv[2]);
+        console_puts(": No such file\n");
+        return -1;
+    }
+
+    int32_t size = fat_size();
+    if (size < 0) {
+        console_puts("cp: ");
+        console_puts(argv[2]);
+        console_puts(": Cannot read size\n");
+        fat_close();
+        return -1;
+    }
+
+    char buf[512];
+    if ((uint32_t)size > sizeof(buf)) {
+        console_puts("cp: ");
+        console_puts(argv[2]);
+        console_puts(": File too large to buffer\n");
+        fat_close();
+        return -1;
+    }
+
+    int32_t n = fat_read(buf, (uint32_t)size);
+    fat_close();
+    if (n <= 0) {
+        console_puts("cp: ");
+        console_puts(argv[2]);
+        console_puts(": Read error\n");
+        return -1;
+    }
+
+    /* Create destination entry */
+    if (fat_create_dir_entry(dst_path, 0, 0) != 0) {
+        console_puts("cp: ");
+        console_puts(argv[3]);
+        console_puts(": cannot create destination\n");
+        return -1;
+    }
+
+    /* Write content to destination */
+    if (fat_write_file(dst_path, buf, (uint32_t)n) != 0) {
+        console_puts("cp: ");
+        console_puts(argv[3]);
+        console_puts(": Write error\n");
+        return -1;
+    }
+
+    console_puts("cp: copied ");
+    console_puts(argv[2]);
+    console_puts(" to ");
+    console_puts(argv[3]);
+    console_putc('\n');
+    return 0;
+}
+
 static int command_ls(int argc, char *argv[]) {
     int long_format = 0;
     int show_all = 0;
@@ -1204,6 +1290,8 @@ static void dispatch(char *text) {
         result = command_touch(argc, argv);
     } else if (strcmp(command, "rm") == 0) {
         result = command_rm(argc, argv);
+    } else if (strcmp(command, "cp") == 0) {
+        result = command_cp(argc, argv);
     } else if (strcmp(command, "cat") == 0) {
         result = command_cat(argc, argv);
     } else if (strcmp(command, "halt") == 0) {
