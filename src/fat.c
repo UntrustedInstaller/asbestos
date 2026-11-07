@@ -130,10 +130,8 @@ static int write_sector(uint32_t lba, const void *buf) {
         return 0;
     }
 
-    /* ATA PIO is read-only in this driver. */
-    (void)lba;
-    (void)src;
-    return -1;
+    /* ATA PIO write. */
+    return ata_write_sectors(ATA_DRIVE, lba, 1, buf);
 }
 
 /* Convert cluster number to LBA of the first sector of that cluster.
