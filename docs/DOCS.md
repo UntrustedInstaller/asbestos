@@ -378,7 +378,9 @@ produces on the target machines. Unsupported keys are simply ignored. The shell
 busy-waits with `cpu_pause()` while the buffer is empty; it does not yet sleep
 on an interrupt, so an idle shell keeps the CPU warm. `brash` applies a 30
 second input timeout: if no key is pressed while at the prompt, any partial
-input is cleared and the prompt is reprinted.
+input is cleared and the prompt is reprinted (as if Enter had been pressed).
+If no key is pressed for five consecutive timeouts, brash asks "Are you still
+there? Did you leave me?" and resets the count.
 
 ### brash
 
