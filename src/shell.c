@@ -1041,6 +1041,99 @@ static int command_cp(int argc, char *argv[]) {
     return 0;
 }
 
+static int command_mv(int argc, char *argv[]) {
+    if (argc < 4) {
+        console_puts("Usage: mv <src> <dst>\n");
+        return -1;
+    }
+
+    char src_path[SHELL_PATH_MAX];
+    if (resolve_path(argv[2], src_path) != 0) {
+        console_puts("mv: source path too long\n");
+        return -1;
+    }
+
+    char dst_path[SHELL_PATH_MAX];
+    if (resolve_path(argv[3], dst_path) != 0) {
+        console_puts("mv: destination path too long\n");
+        return -1;
+    }
+
+    /* Source must exist and not be a directory */
+    if (fat_is_dir(src_path)) {
+        console_puts("mv: ");
+        console_puts(argv[2]);
+        console_puts(": Is a directory\n");
+        return -1;
+    }
+
+    /* Copy source to destination */
+    if (fat_open(src_path) != 0) {
+        console_puts("mv: ");
+        console_puts(argv[2]);
+        console_puts(": No such file\n");
+        return -1;
+    }
+
+    int32_t size = fat_size();
+    if (size < 0) {
+        console_puts("mv: ");
+        console_puts(argv[2]);
+        console_puts(": Cannot read size\n");
+        fat_close();
+        return -1;
+    }
+
+    char buf[512];
+    if ((uint32_t)size > sizeof(buf)) {
+        console_puts("mv: ");
+        console_puts(argv[2]);
+        console_puts(": File too large to buffer\n");
+        fat_close();
+        return -1;
+    }
+
+    int32_t n = fat_read(buf, (uint32_t)size);
+    fat_close();
+    if (n <= 0) {
+        console_puts("mv: ");
+        console_puts(argv[2]);
+        console_puts(": Read error\n");
+        return -1;
+    }
+
+    /* Create destination entry */
+    if (fat_create_dir_entry(dst_path, 0, 0) != 0) {
+        console_puts("mv: ");
+        console_puts(argv[3]);
+        console_puts(": cannot create destination\n");
+        return -1;
+    }
+
+    /* Write content to destination */
+    if (fat_write_file(dst_path, buf, (uint32_t)n) != 0) {
+        console_puts("mv: ");
+        console_puts(argv[3]);
+        console_puts(": Write error\n");
+        return -1;
+    }
+
+    /* Remove source entry */
+    if (fat_delete_dir_entry(src_path) != 0) {
+        console_puts("mv: ");
+        console_puts(argv[2]);
+        console_puts(": failed to remove source\n");
+        return -1;
+    }
+
+    console_puts("mv: moved ");
+    console_puts(argv[2]);
+    console_puts(" to ");
+    console_puts(argv[3]);
+    console_putc('\n');
+    return 0;
+}
+
 static int command_ls(int argc, char *argv[]) {
     int long_format = 0;
     int show_all = 0;
