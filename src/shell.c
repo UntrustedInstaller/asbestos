@@ -293,6 +293,7 @@ static void command_help(void) {
     console_puts("  dirname <path>   print the directory portion of a path\n");
     console_puts("  mkdir <dir>      create a directory\n");
     console_puts("  touch <file>     create an empty file\n");
+    console_puts("  rm <file>        delete a file\n");
     console_puts("  ls [-l] [-a] [dir]  list directory contents\n");
     console_puts("  cat <file>...  display file contents\n");
     console_puts("  halt           stop the machine\n");
@@ -921,6 +922,38 @@ static int command_touch(int argc, char *argv[]) {
     return 0;
 }
 
+static int command_rm(int argc, char *argv[]) {
+    if (argc < 3) {
+        console_puts("Usage: rm <file>\n");
+        return -1;
+    }
+
+    char path[SHELL_PATH_MAX];
+    if (resolve_path(argv[2], path) != 0) {
+        console_puts("rm: path too long\n");
+        return -1;
+    }
+
+    if (!fat_is_dir(path)) {
+        /* Not a directory: plain file deletion. */
+        if (fat_delete_dir_entry(path) != 0) {
+            console_puts("rm: ");
+            console_puts(argv[2]);
+            console_puts(": No such file\n");
+            return -1;
+        }
+        console_puts("rm: deleted ");
+        console_puts(argv[2]);
+        console_putc('\n');
+        return 0;
+    }
+
+    console_puts("rm: ");
+    console_puts(argv[2]);
+    console_puts(": Is a directory\n");
+    return -1;
+}
+
 static int command_ls(int argc, char *argv[]) {
     int long_format = 0;
     int show_all = 0;
@@ -1169,6 +1202,8 @@ static void dispatch(char *text) {
         result = command_mkdir(argc, argv);
     } else if (strcmp(command, "touch") == 0) {
         result = command_touch(argc, argv);
+    } else if (strcmp(command, "rm") == 0) {
+        result = command_rm(argc, argv);
     } else if (strcmp(command, "cat") == 0) {
         result = command_cat(argc, argv);
     } else if (strcmp(command, "halt") == 0) {
