@@ -458,6 +458,7 @@ The first iteration is built-in only:
 | `dirname <path>` | Print the directory portion of a path |
 | `mkdir <dir>` | Create a directory |
 | `touch <file>` | Create an empty file |
+| `rm <file>` | Delete a file |
 | `halt` | Stop the machine |
 | `panic` | Force a divide error and enter the panic screen |
 | `reboot` | Reset the machine |
