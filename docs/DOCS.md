@@ -587,7 +587,8 @@ and a firmware that leaves A20 controllable through port `0x92`.
 ## 11. Milestone 2 and beyond
 
 Milestone 2 is in progress. The IDT and panic screen, the PIT and IRQ-driven
-PS/2 keyboard, the read-only filesystem, and `brash` are done.
+PS/2 keyboard, the FAT12/FAT16/FAT32 filesystem with write support, and `brash`
+are done.
 
 The shell is called **`brash`**, the Asbestos SHell. Its normal prompt is
 `usr@brash:~>` (with the current directory after the colon). Errors make it
@@ -613,7 +614,10 @@ The intended order for the rest is:
 6. ~~**`brash` and the manners gate.**~~ Done: a cwd-aware prompt that gets
    more upset with each error, `please` normally, `sorry` after an error, exact
    error strings, `cd`/`ls`/`cat`, and no compound statements.
-7. **Write support and loadable modules.** Only after the read path is stable.
+7. ~~**Write support.**~~ Done: `touch`, `mkdir`, `rm`, `cp`, `mv` work on the
+   on-disk FAT partition via legacy ATA PIO; writes to the embedded memdisk
+   fallback work at runtime but are not persistent across reboot.
+   ~~**Loadable modules.**~~ Remaining: program execution, module loader.
 
 Each step should keep the serial log and screenshot checks working so
 regressions are obvious.
