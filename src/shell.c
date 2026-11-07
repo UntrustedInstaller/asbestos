@@ -50,6 +50,7 @@
  * error.
  */
 static int apology_debt;
+static int idle_count;
 static char line[SHELL_LINE_MAX];
 
 /* Current directory relative to the FAT root ("" means root). */
@@ -1419,9 +1420,16 @@ void shell_run(void) {
         print_prompt();
 
         if (read_line(line, sizeof(line)) != 0) {
-            /* Input timeout: reprint the prompt. */
+            /* Input timeout: simulate pressing enter. */
+            idle_count++;
+            if (idle_count >= 5) {
+                console_puts("Are you still there? Did you leave me?\n");
+                idle_count = 0;
+            }
             continue;
         }
+
+        idle_count = 0;
 
         serial_puts("brash: ");
         serial_puts(line);
