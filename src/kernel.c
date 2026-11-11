@@ -10,6 +10,7 @@
 #include "shell.h"
 #include "ata_pio.h"
 #include "fat.h"
+#include "paging.h"
 
 /* Embedded FAT image, linked in by build.sh via objcopy. */
 extern const uint8_t _binary_build_fat_part_img_start[];
@@ -43,7 +44,10 @@ void kernel_main(void) {
 
     console_init(bi);
     console_clear();
-
+    serial_puts("fb_addr=");
+    serial_put_hex32(bi->fb_addr);
+    serial_puts("\n");
+	paging_init(bi);
     console_puts("asbestOS\n");
     console_puts("difficult. by design.\n");
 
